@@ -66,8 +66,8 @@ function ResetPasswordContent() {
           {submitting ? 'Resetting…' : 'Reset password'}
         </Button>
       </form>
-      <p className="mt-4 text-center text-sm text-neutral-600">
-        <Link href="/login" className="font-medium text-neutral-900 underline">
+      <p className="mt-4 text-center text-sm text-muted-foreground">
+        <Link href="/login" className="font-medium text-primary underline">
           Back to log in
         </Link>
       </p>

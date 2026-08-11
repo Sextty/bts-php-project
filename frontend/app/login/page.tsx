@@ -44,7 +44,7 @@ export default function LoginPage() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">Password</Label>
-            <Link href="/forgot-password" className="text-sm text-neutral-600 underline">
+            <Link href="/forgot-password" className="text-sm text-muted-foreground underline">
               Forgot password?
             </Link>
           </div>
@@ -60,15 +60,15 @@ export default function LoginPage() {
           {submitting ? 'Signing in…' : 'Continue'}
         </Button>
       </form>
-      <div className="my-4 flex items-center gap-2 text-xs text-neutral-400">
-        <div className="h-px flex-1 bg-neutral-200" />
+      <div className="my-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
         or
-        <div className="h-px flex-1 bg-neutral-200" />
+        <div className="h-px flex-1 bg-border" />
       </div>
       <GoogleSignInButton />
-      <p className="mt-4 text-center text-sm text-neutral-600">
+      <p className="mt-4 text-center text-sm text-muted-foreground">
         New to BTS Bank?{' '}
-        <Link href="/register" className="font-medium text-neutral-900 underline">
+        <Link href="/register" className="font-medium text-primary underline">
           Create an account
         </Link>
       </p>

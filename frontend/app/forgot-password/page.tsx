@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
     <AuthCard title="Reset your password" description="We'll email you a link to reset your password.">
       <ErrorAlert message={error} />
       {message ? (
-        <p className="text-sm text-neutral-700">{message}</p>
+        <p className="text-sm text-foreground">{message}</p>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -53,8 +53,8 @@ export default function ForgotPasswordPage() {
           </Button>
         </form>
       )}
-      <p className="mt-4 text-center text-sm text-neutral-600">
-        <Link href="/login" className="font-medium text-neutral-900 underline">
+      <p className="mt-4 text-center text-sm text-muted-foreground">
+        <Link href="/login" className="font-medium text-primary underline">
           Back to log in
         </Link>
       </p>

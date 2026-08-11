@@ -45,6 +45,11 @@ class User extends Authenticatable
         return $this->hasMany(OtpCode::class);
     }
 
+    public function creditApplications()
+    {
+        return $this->hasMany(CreditApplication::class);
+    }
+
     public function isPhoneVerified(): bool
     {
         return $this->phone_verified_at !== null;

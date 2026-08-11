@@ -7,6 +7,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -63,6 +64,23 @@ return Application::configure(basePath: dirname(__DIR__))
                 'success' => false,
                 'error' => ['code' => 'UNAUTHENTICATED', 'message' => 'Authentication required.'],
             ], 401);
+        });
+
+        // Policy denials (e.g. loading another customer's application) — introduced by the
+        // credit-application domain, the first to use Policies in this app. Laravel's handler
+        // converts Illuminate\Auth\Access\AuthorizationException to this Symfony type via
+        // prepareException() BEFORE custom renderers run (same reason NotFoundHttpException,
+        // not ModelNotFoundException, is registered above) — confirmed live, registering the
+        // pre-conversion type here never matched.
+        $exceptions->render(function (AccessDeniedHttpException $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => ['code' => 'FORBIDDEN', 'message' => 'You do not have access to this resource.'],
+            ], 403);
         });
 
         $exceptions->render(function (ValidationException $e, Request $request) {

@@ -47,6 +47,20 @@ return [
             'report' => false,
         ],
 
+        // Credit-application document uploads (Part 1 spec, section 8). Not public — served
+        // only through DocumentController's authorized download action. Driver is swappable to
+        // 's3' later purely via DOCUMENTS_DISK/AWS_* env vars, no code change needed.
+        'documents' => [
+            'driver' => env('DOCUMENTS_DISK', 'local'),
+            'root' => storage_path('app/documents'),
+            'key' => env('AWS_ACCESS_KEY_ID'),
+            'secret' => env('AWS_SECRET_ACCESS_KEY'),
+            'region' => env('AWS_DEFAULT_REGION'),
+            'bucket' => env('AWS_BUCKET'),
+            'throw' => false,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

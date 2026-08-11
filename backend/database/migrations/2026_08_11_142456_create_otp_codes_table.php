@@ -18,7 +18,11 @@ return new class extends Migration
             $table->string('code_hash');
             $table->enum('purpose', ['registration', 'login', 'password_reset']);
             $table->enum('channel', ['sms', 'email'])->default('sms');
-            $table->timestamp('expires_at');
+            // dateTime, not timestamp: this XAMPP MySQL has explicit_defaults_for_timestamp
+            // off, so a bare NOT NULL `timestamp` column silently gets an implicit
+            // ON UPDATE CURRENT_TIMESTAMP clause, resetting expires_at on every unrelated
+            // UPDATE to the row (e.g. the attempt_count increment on a failed OTP check).
+            $table->dateTime('expires_at');
             $table->timestamp('consumed_at')->nullable();
             $table->unsignedTinyInteger('attempt_count')->default(0);
             $table->timestamp('created_at')->useCurrent();

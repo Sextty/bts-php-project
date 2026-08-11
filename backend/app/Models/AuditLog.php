@@ -11,6 +11,7 @@ class AuditLog extends Model
 
     protected $fillable = [
         'user_id',
+        'credit_application_id',
         'action',
         'previous_state',
         'new_state',
@@ -29,5 +30,10 @@ class AuditLog extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function creditApplication(): BelongsTo
+    {
+        return $this->belongsTo(CreditApplication::class);
     }
 }

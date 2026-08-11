@@ -109,15 +109,15 @@ export default function RegisterPage() {
           {submitting ? 'Creating account…' : 'Create account'}
         </Button>
       </form>
-      <div className="my-4 flex items-center gap-2 text-xs text-neutral-400">
-        <div className="h-px flex-1 bg-neutral-200" />
+      <div className="my-4 flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
         or
-        <div className="h-px flex-1 bg-neutral-200" />
+        <div className="h-px flex-1 bg-border" />
       </div>
       <GoogleSignInButton />
-      <p className="mt-4 text-center text-sm text-neutral-600">
+      <p className="mt-4 text-center text-sm text-muted-foreground">
         Already have an account?{' '}
-        <Link href="/login" className="font-medium text-neutral-900 underline">
+        <Link href="/login" className="font-medium text-primary underline">
           Log in
         </Link>
       </p>
