@@ -86,7 +86,7 @@ class RegistrationTest extends AuthTestCase
         $token = $response->json('data.access_token');
         $this->getJson('/api/user', ['Authorization' => "Bearer {$token}"])
             ->assertOk()
-            ->assertJsonPath('email', 'amel3@example.com');
+            ->assertJsonPath('data.user.email', 'amel3@example.com');
     }
 
     public function test_verify_registration_otp_with_the_wrong_code_is_rejected_and_does_not_verify_phone(): void

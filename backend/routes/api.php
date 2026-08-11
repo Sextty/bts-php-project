@@ -5,6 +5,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Resources\UserResource;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -35,5 +36,5 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::middleware('auth:sanctum')->get('user', function () {
-    return request()->user();
+    return response()->json(['success' => true, 'data' => ['user' => new UserResource(request()->user())]]);
 });
