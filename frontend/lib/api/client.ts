@@ -1,4 +1,5 @@
 import { getToken } from '@/lib/auth/token';
+import { getStaffToken } from '@/lib/auth/staff-token';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -27,12 +28,14 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(
   path: string,
-  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; auth?: boolean } = {}
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; auth?: boolean | 'staff' } = {}
 ): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
 
   if (options.auth) {
-    const token = getToken();
+    // 'staff' reads a separate localStorage key (lib/auth/staff-token.ts) — a staff session and
+    // a customer session can coexist in the same browser without either overwriting the other.
+    const token = options.auth === 'staff' ? getStaffToken() : getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
 

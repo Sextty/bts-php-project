@@ -79,7 +79,7 @@ class OtpService
         });
 
         $message = "Your BTS Bank verification code is {$code}. It expires in {$ttlMinutes} minutes.";
-        $result = $this->smsProvider->send($user->phone, $message);
+        $result = $this->smsProvider->send($user, $message);
 
         $this->auditLog->log(
             $result->ok ? 'otp.requested' : 'otp.dispatch_failed',

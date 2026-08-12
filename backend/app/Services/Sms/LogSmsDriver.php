@@ -3,23 +3,28 @@
 namespace App\Services\Sms;
 
 use App\Contracts\SmsProviderInterface;
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Dev-safe default: writes the message to the Laravel log instead of sending a real SMS. This is
- * the only driver implemented so far (SMS_PROVIDER=log) — no real carrier integration exists yet,
- * matching how the platform being replaced also shipped with mock-only providers and no real SMS
- * vendor wired up.
+ * Dev-safe default: writes the message to the Laravel log instead of sending it anywhere. Used
+ * whenever SMS_PROVIDER=log, which is the local default — read the code out of storage/logs.
  */
 class LogSmsDriver implements SmsProviderInterface
 {
-    public function send(string $to, string $message): SmsDeliveryResult
+    public function send(User $user, string $message): SmsDeliveryResult
     {
         Log::channel(config('logging.default'))->info('[sms:log-driver] outgoing SMS', [
-            'to' => $to,
+            'to' => (string) $user->phone,
             'message' => $message,
         ]);
 
         return SmsDeliveryResult::success();
+    }
+
+    public function canReach(User $user): bool
+    {
+        // The log always accepts anything — that is the point of this driver.
+        return true;
     }
 }

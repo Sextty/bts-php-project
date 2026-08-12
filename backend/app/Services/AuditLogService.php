@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\AuditLog;
 use App\Models\CreditApplication;
+use App\Models\StaffUser;
 use App\Models\User;
 
 /**
@@ -22,9 +23,11 @@ class AuditLogService
         ?string $ipAddress = null,
         ?string $userAgent = null,
         ?CreditApplication $application = null,
+        ?StaffUser $staffUser = null,
     ): AuditLog {
         return AuditLog::create([
             'user_id' => $user?->id,
+            'staff_user_id' => $staffUser?->id,
             'credit_application_id' => $application?->id,
             'action' => $action,
             'previous_state' => $previousState ?: null,

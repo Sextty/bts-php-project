@@ -39,6 +39,20 @@ return [
         'provider' => env('SMS_PROVIDER', 'log'),
     ],
 
+    'telegram' => [
+        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
+        'bot_username' => env('TELEGRAM_BOT_USERNAME'),
+    ],
+
+    'vonage' => [
+        'api_key' => env('VONAGE_API_KEY'),
+        'api_secret' => env('VONAGE_API_SECRET'),
+        // Alphanumeric sender ID shown as the "from" — some destination countries' carriers
+        // reject alphanumeric senders and require a real Vonage virtual number instead; if OTP
+        // delivery fails silently, that's the first thing to check.
+        'brand_name' => env('VONAGE_BRAND_NAME', 'BTSBank'),
+    ],
+
     'google' => [
         'client_id' => env('GOOGLE_OAUTH_CLIENT_ID'),
     ],

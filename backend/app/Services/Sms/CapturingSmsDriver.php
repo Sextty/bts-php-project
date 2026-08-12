@@ -3,6 +3,7 @@
 namespace App\Services\Sms;
 
 use App\Contracts\SmsProviderInterface;
+use App\Models\User;
 
 /**
  * Test-only double: records every message instead of sending or logging it, so feature tests can
@@ -16,11 +17,18 @@ class CapturingSmsDriver implements SmsProviderInterface
     /** @var array<int, array{to: string, message: string}> */
     public array $sent = [];
 
-    public function send(string $to, string $message): SmsDeliveryResult
+    public function send(User $user, string $message): SmsDeliveryResult
     {
-        $this->sent[] = ['to' => $to, 'message' => $message];
+        // Explicit cast: a freshly-created User can still hold the Stringable that
+        // $request->string() produced, which the old string-typed signature coerced for us.
+        $this->sent[] = ['to' => (string) $user->phone, 'message' => $message];
 
         return SmsDeliveryResult::success();
+    }
+
+    public function canReach(User $user): bool
+    {
+        return true;
     }
 
     public function lastCode(): string

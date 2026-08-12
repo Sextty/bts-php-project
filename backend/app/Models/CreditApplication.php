@@ -33,7 +33,21 @@ class CreditApplication extends Model
 
     public const STATUS_SUBMITTED = 'SUBMITTED';
 
-    /** Order matters: index = how far the application has progressed. */
+    public const STATUS_STAFF_APPROVED = 'STAFF_APPROVED';
+
+    public const STATUS_STAFF_REJECTED = 'STAFF_REJECTED';
+
+    public const STATUS_APPROVED = 'APPROVED';
+
+    public const STATUS_REJECTED = 'REJECTED';
+
+    /**
+     * Order matters: index = how far the application has progressed. STAFF_REJECTED/REJECTED
+     * are branch endpoints rather than "further along" in a strict sense, but their exact
+     * position relative to STAFF_APPROVED/APPROVED is irrelevant — hasReached()/isLocked() only
+     * ever compare against thresholds earlier in the flow (e.g. "has this at least reached
+     * SUBMITTED"), never against a sibling branch.
+     */
     public const STATUS_ORDER = [
         self::STATUS_DRAFT,
         self::STATUS_STEP_1_COMPLETED,
@@ -44,12 +58,19 @@ class CreditApplication extends Model
         self::STATUS_VALIDATION_2,
         self::STATUS_FINAL_LOCKED,
         self::STATUS_SUBMITTED,
+        self::STATUS_STAFF_APPROVED,
+        self::STATUS_STAFF_REJECTED,
+        self::STATUS_APPROVED,
+        self::STATUS_REJECTED,
     ];
 
     protected $fillable = [
         'user_id',
         'status',
         'submitted_at',
+        'rejection_reason',
+        'decided_by_staff_user_id',
+        'decided_by_admin_user_id',
     ];
 
     protected function casts(): array
@@ -62,6 +83,16 @@ class CreditApplication extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function decidedByStaffUser(): BelongsTo
+    {
+        return $this->belongsTo(StaffUser::class, 'decided_by_staff_user_id');
+    }
+
+    public function decidedByAdminUser(): BelongsTo
+    {
+        return $this->belongsTo(StaffUser::class, 'decided_by_admin_user_id');
     }
 
     public function client(): HasOne
@@ -89,9 +120,16 @@ class CreditApplication extends Model
         return $this->hasMany(ValidationStep::class);
     }
 
+    /**
+     * True from FINAL_LOCKED onward — including every review state added after SUBMITTED. Uses
+     * hasReached() rather than an explicit status list so a future status appended to
+     * STATUS_ORDER is locked by default instead of silently falling through as editable, which
+     * an explicit in_array() list would do (caught before shipping: the review states added here
+     * would have left already-decided applications editable by the customer).
+     */
     public function isLocked(): bool
     {
-        return in_array($this->status, [self::STATUS_FINAL_LOCKED, self::STATUS_SUBMITTED], true);
+        return $this->hasReached(self::STATUS_FINAL_LOCKED);
     }
 
     /** True if $status is at or beyond $threshold in the state machine's fixed order. */

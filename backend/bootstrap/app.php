@@ -1,6 +1,8 @@
 <?php
 
 use App\Exceptions\ApiException;
+use App\Http\Middleware\EnsureStaffRole;
+use App\Http\Middleware\EnsureStaffUser;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -32,6 +34,11 @@ return Application::configure(basePath: dirname(__DIR__))
         // header hits Laravel's default "redirect to login" behavior and 500s with
         // "Route [login] not defined" (caught live) instead of a clean 401.
         $middleware->redirectGuestsTo(fn (Request $request) => null);
+
+        $middleware->alias([
+            'staff' => EnsureStaffUser::class,
+            'staff.role' => EnsureStaffRole::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Business-flow outcomes (wrong password, expired OTP, ...) are expected, handled

@@ -18,7 +18,7 @@ function VerifyOtpContent() {
   }
 
   return (
-    <AuthCard title="Verify your phone" description="Enter the 6-digit code we texted you.">
+    <AuthCard title="Verify your phone" description="Enter the 6-digit code we sent to your Telegram.">
       <OtpVerifyForm onVerify={handleVerify} submitLabel="Verify and continue" />
     </AuthCard>
   );

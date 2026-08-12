@@ -9,7 +9,11 @@ export type ApplicationStatus =
   | 'VALIDATION_1_COMPLETED'
   | 'VALIDATION_2'
   | 'FINAL_LOCKED'
-  | 'SUBMITTED';
+  | 'SUBMITTED'
+  | 'STAFF_APPROVED'
+  | 'STAFF_REJECTED'
+  | 'APPROVED'
+  | 'REJECTED';
 
 export interface ClientDto {
   code_client: string;
@@ -93,6 +97,7 @@ export interface CreditApplicationDto {
   status: ApplicationStatus;
   is_locked: boolean;
   submitted_at: string | null;
+  rejection_reason: string | null;
   created_at: string;
   client?: ClientDto;
   credit_request?: CreditRequestDto;

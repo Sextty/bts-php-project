@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Contracts\SmsProviderInterface;
 use App\Services\Sms\LogSmsDriver;
+use App\Services\Sms\TelegramOtpDriver;
+use App\Services\Sms\VonageSmsDriver;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -15,8 +17,14 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(SmsProviderInterface::class, function () {
             return match (config('services.sms.provider')) {
-                // Only 'log' exists today — add a case here when a real provider is built,
-                // never change OtpService or the controllers that consume the interface.
+                'telegram' => new TelegramOtpDriver(config('services.telegram.bot_token')),
+                'vonage' => new VonageSmsDriver(
+                    config('services.vonage.api_key'),
+                    config('services.vonage.api_secret'),
+                    config('services.vonage.brand_name'),
+                ),
+                // never change OtpService or the controllers that consume the interface —
+                // adding a provider only ever means a new class + a case here.
                 default => new LogSmsDriver,
             };
         });

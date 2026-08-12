@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Contracts\SmsProviderInterface;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\OtpService;
 use App\Services\PreAuthTokenService;
+use App\Services\TelegramLinkService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
 
@@ -25,6 +27,8 @@ class LoginController extends Controller
         private readonly OtpService $otp,
         private readonly PreAuthTokenService $preAuth,
         private readonly AuditLogService $auditLog,
+        private readonly SmsProviderInterface $otpChannel,
+        private readonly TelegramLinkService $telegramLink,
     ) {}
 
     public function login(LoginRequest $request): JsonResponse
@@ -65,8 +69,22 @@ class LoginController extends Controller
 
         // Only a 5-minute, single-purpose pre_auth_token is issued here — never an access token.
         // A correct password alone must never reach an authenticated endpoint.
-        $this->otp->generateAndSend($user, self::PURPOSE, $request->ip(), $request->userAgent());
         $preAuthToken = $this->preAuth->issue($user, self::PURPOSE);
+
+        // An account predating Telegram delivery (or one that never finished the handshake) has
+        // no chat to receive a code — same one-time link step as registration, not a dead end.
+        if (! $this->otpChannel->canReach($user)) {
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'pre_auth_token' => $preAuthToken,
+                    'requires_telegram_link' => true,
+                    'telegram_link_url' => $this->telegramLink->deepLinkFor($user),
+                ],
+            ]);
+        }
+
+        $this->otp->generateAndSend($user, self::PURPOSE, $request->ip(), $request->userAgent());
 
         return response()->json([
             'success' => true,
