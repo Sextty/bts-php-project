@@ -16,6 +16,10 @@ class DocumentResource extends JsonResource
             'mime_type' => $this->mime_type,
             'size_bytes' => $this->size_bytes,
             'uploaded_at' => $this->created_at,
+            'ai_verified_at' => $this->ai_verified_at,
+            'ai_is_valid' => $this->ai_is_valid,
+            'ai_confidence' => $this->ai_confidence,
+            'ai_comment' => $this->ai_comment,
         ];
     }
 }

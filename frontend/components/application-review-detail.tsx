@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CircleCheck, CircleHelp, CircleX } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -54,11 +54,11 @@ export function ApplicationReviewDetail({
     <div className="space-y-6">
       <ErrorAlert message={error} />
 
-      <Card className="border-border/60 shadow-sm">
+      <Card className="card-surface">
         <CardHeader>
-          <CardTitle className="text-base">Applicant</CardTitle>
+          <CardTitle>Applicant</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-2 text-sm">
+        <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <SummaryRow label="Name" value={application.applicant?.name ?? '—'} />
           <SummaryRow label="Email" value={application.applicant?.email ?? '—'} />
           <SummaryRow label="Phone" value={application.applicant?.phone ?? '—'} />
@@ -67,11 +67,11 @@ export function ApplicationReviewDetail({
       </Card>
 
       {application.client && (
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
-            <CardTitle className="text-base">Client</CardTitle>
+            <CardTitle>Client</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 text-sm">
+          <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <SummaryRow label="Nom" value={`${application.client.prenom} ${application.client.nom}`} />
             <SummaryRow label="Code client" value={application.client.code_client} />
             <SummaryRow label="Type de pièce" value={`${application.client.type_pid} — ${application.client.numero_pid}`} />
@@ -81,11 +81,11 @@ export function ApplicationReviewDetail({
       )}
 
       {application.credit_request && (
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
-            <CardTitle className="text-base">Demande de Crédit</CardTitle>
+            <CardTitle>Demande de Crédit</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 text-sm">
+          <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <SummaryRow label="Type" value={application.credit_request.type_demande} />
             <SummaryRow
               label="Montant sollicité"
@@ -96,11 +96,11 @@ export function ApplicationReviewDetail({
       )}
 
       {application.project && (
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
-            <CardTitle className="text-base">Projet</CardTitle>
+            <CardTitle>Projet</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2 text-sm">
+          <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             <SummaryRow label="Type" value={application.project.type_projet} />
             <SummaryRow label="Coût" value={application.project.cout} />
             <SummaryRow label="Financement" value={application.project.financement} />
@@ -110,16 +110,26 @@ export function ApplicationReviewDetail({
       )}
 
       {application.documents && application.documents.length > 0 && (
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
-            <CardTitle className="text-base">Documents</CardTitle>
+            <CardTitle>Documents</CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-2 text-sm">
               {application.documents.map((doc) => (
-                <li key={doc.id} className="flex justify-between">
-                  <span className="text-muted-foreground">{doc.document_type}</span>
-                  <span>{doc.original_filename}</span>
+                <li key={doc.id} className="space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <AiVerificationIcon isValid={doc.ai_is_valid} verifiedAt={doc.ai_verified_at} />
+                      {doc.document_type}
+                    </span>
+                    <span>{doc.original_filename}</span>
+                  </div>
+                  {doc.ai_comment && (
+                    <p className="pl-5 text-xs text-muted-foreground">
+                      AI ({doc.ai_confidence} confidence): {doc.ai_comment}
+                    </p>
+                  )}
                 </li>
               ))}
             </ul>
@@ -183,4 +193,15 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
       <p className="font-medium">{value}</p>
     </div>
   );
+}
+
+/** AI authenticity check status — advisory only, so "not yet checked" is a neutral icon, not an error. */
+function AiVerificationIcon({ isValid, verifiedAt }: { isValid: boolean | null; verifiedAt: string | null }) {
+  if (!verifiedAt) {
+    return <CircleHelp className="size-3.5 shrink-0 text-muted-foreground/50" />;
+  }
+  if (isValid) {
+    return <CircleCheck className="size-3.5 shrink-0 text-emerald-600" />;
+  }
+  return <CircleX className="size-3.5 shrink-0 text-destructive" />;
 }

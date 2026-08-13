@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CreditApplication;
 use App\Models\ValidationStep;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Runs the Validation-1 checks (Part 1 spec, Étape 4): required sections present, required
@@ -14,7 +15,10 @@ use App\Models\ValidationStep;
  */
 class CreditApplicationValidationService
 {
-    public function __construct(private readonly AuditLogService $auditLog) {}
+    public function __construct(
+        private readonly AuditLogService $auditLog,
+        private readonly DocumentVerificationService $documentVerification,
+    ) {}
 
     /** @return array<string> Empty array means validation passed. */
     public function checkRequiredSections(CreditApplication $application): array
@@ -68,9 +72,38 @@ class CreditApplicationValidationService
             return $errors;
         }
 
+        $this->verifyDocuments($application);
+
         $application->update(['status' => CreditApplication::STATUS_VALIDATION_1_COMPLETED]);
         $this->auditLog->log('credit_application.validation_1_passed', $application->user, ipAddress: $ip, userAgent: $userAgent, application: $application);
 
         return [];
+    }
+
+    /**
+     * AI authenticity check, advisory only — per document, best-effort. A failure (provider
+     * down, no API key configured, malformed response) is logged and leaves ai_verified_at null
+     * rather than blocking validation-1; staff simply see "not yet checked" for that document
+     * instead of a verdict. Documents already checked (ai_verified_at set) are skipped.
+     */
+    private function verifyDocuments(CreditApplication $application): void
+    {
+        foreach ($application->documents()->whereNull('ai_verified_at')->get() as $document) {
+            try {
+                $result = $this->documentVerification->verify($document);
+
+                $document->update([
+                    'ai_verified_at' => now(),
+                    'ai_is_valid' => $result['is_valid'],
+                    'ai_confidence' => $result['confidence'],
+                    'ai_comment' => $result['comment'],
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('[document-verification] check failed', [
+                    'document_id' => $document->id,
+                    'exception' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }

@@ -39,11 +39,6 @@ return [
         'provider' => env('SMS_PROVIDER', 'log'),
     ],
 
-    'telegram' => [
-        'bot_token' => env('TELEGRAM_BOT_TOKEN'),
-        'bot_username' => env('TELEGRAM_BOT_USERNAME'),
-    ],
-
     'vonage' => [
         'api_key' => env('VONAGE_API_KEY'),
         'api_secret' => env('VONAGE_API_SECRET'),
@@ -62,6 +57,13 @@ return [
         'ttl_minutes' => env('OTP_TTL_MINUTES', 5),
         'max_attempts' => env('OTP_MAX_ATTEMPTS', 5),
         'request_cooldown_seconds' => env('OTP_REQUEST_COOLDOWN_SECONDS', 60),
+    ],
+
+    // OpenRouter — one OpenAI-compatible API in front of many providers' free vision models, so
+    // swapping which model verifies documents is an env var change, not a code change.
+    'openrouter' => [
+        'api_key' => env('OPENROUTER_API_KEY'),
+        'model' => env('OPENROUTER_MODEL', 'nvidia/nemotron-nano-12b-v2-vl:free'),
     ],
 
 ];

@@ -17,12 +17,18 @@ class Document extends Model
         'disk_path',
         'mime_type',
         'size_bytes',
+        'ai_verified_at',
+        'ai_is_valid',
+        'ai_confidence',
+        'ai_comment',
     ];
 
     protected function casts(): array
     {
         return [
             'size_bytes' => 'integer',
+            'ai_verified_at' => 'datetime',
+            'ai_is_valid' => 'boolean',
         ];
     }
 
