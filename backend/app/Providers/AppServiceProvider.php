@@ -3,8 +3,8 @@
 namespace App\Providers;
 
 use App\Contracts\SmsProviderInterface;
+use App\Services\Sms\EmailOtpDriver;
 use App\Services\Sms\LogSmsDriver;
-use App\Services\Sms\TelegramOtpDriver;
 use App\Services\Sms\VonageSmsDriver;
 use Illuminate\Support\ServiceProvider;
 
@@ -17,7 +17,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->bind(SmsProviderInterface::class, function () {
             return match (config('services.sms.provider')) {
-                'telegram' => new TelegramOtpDriver(config('services.telegram.bot_token')),
+                'email' => new EmailOtpDriver,
                 'vonage' => new VonageSmsDriver(
                     config('services.vonage.api_key'),
                     config('services.vonage.api_secret'),

@@ -25,8 +25,6 @@ class User extends Authenticatable
         'google_id',
         'auth_provider',
         'status',
-        'telegram_chat_id',
-        'telegram_link_token',
     ];
 
     protected $hidden = [

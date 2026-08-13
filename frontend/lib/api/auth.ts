@@ -12,9 +12,6 @@ export interface UserDto {
 
 export interface PreAuthResponse {
   pre_auth_token: string;
-  /** Present when the OTP channel can't reach this account yet (Telegram handshake pending). */
-  requires_telegram_link?: true;
-  telegram_link_url?: string;
 }
 
 export interface SessionResponse {
@@ -34,14 +31,6 @@ export function register(input: {
     method: 'POST',
     body: input,
   });
-}
-
-/**
- * Polled while the user is on the Telegram-link screen. Returns linked:true once they've pressed
- * Start in the bot — at which point the backend has already dispatched their OTP.
- */
-export function checkTelegramLink(input: { pre_auth_token: string; purpose: 'registration' | 'login' }) {
-  return apiFetch<{ linked: boolean }>('/auth/telegram/link-status', { method: 'POST', body: input });
 }
 
 export function verifyRegistrationOtp(input: { pre_auth_token: string; otp_code: string }) {

@@ -60,7 +60,14 @@ class OtpService
 
         $code = str_pad((string) random_int(0, (10 ** $length) - 1), $length, '0', STR_PAD_LEFT);
 
-        DB::transaction(function () use ($user, $purpose, $code, $ttlMinutes) {
+        // otp_codes.channel is enum('sms','email') — a medium, not a provider name. Any
+        // non-email provider (vonage, log, or a future SMS-based one) buckets under 'sms'; only
+        // 'email' maps to itself. Writing config('services.sms.provider') here directly used to
+        // break on anything but SMS_PROVIDER=email (e.g. the framework's own 'log' default),
+        // since the enum has no 'log'/'vonage' value.
+        $channel = config('services.sms.provider') === 'email' ? 'email' : 'sms';
+
+        DB::transaction(function () use ($user, $purpose, $code, $ttlMinutes, $channel) {
             // Invalidate every prior unconsumed code for this user+purpose — a fix versus the
             // platform being replaced, which left old codes independently valid.
             OtpCode::query()
@@ -73,7 +80,7 @@ class OtpService
                 'user_id' => $user->id,
                 'code_hash' => Hash::make($code),
                 'purpose' => $purpose,
-                'channel' => 'sms',
+                'channel' => $channel,
                 'expires_at' => now()->addMinutes($ttlMinutes),
             ]);
         });
@@ -84,7 +91,7 @@ class OtpService
         $this->auditLog->log(
             $result->ok ? 'otp.requested' : 'otp.dispatch_failed',
             $user,
-            newState: ['purpose' => $purpose, 'channel' => 'sms'],
+            newState: ['purpose' => $purpose, 'channel' => $channel],
             ipAddress: $ip,
             userAgent: $userAgent,
         );
