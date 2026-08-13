@@ -16,4 +16,21 @@ export function setStaffToken(token: string): void {
 
 export function clearStaffToken(): void {
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(ROLE_STORAGE_KEY);
+}
+
+const ROLE_STORAGE_KEY = 'bts_staff_role';
+
+/**
+ * Not returned by any GET endpoint on its own, so the login page stashes it here — pages that
+ * don't already know the role (e.g. a shared "Reports" screen reachable by both staff and admin)
+ * read it back for display only, never for authorization (the backend enforces that).
+ */
+export function getStaffRole(): 'staff' | 'admin' | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(ROLE_STORAGE_KEY) as 'staff' | 'admin' | null;
+}
+
+export function setStaffRole(role: 'staff' | 'admin'): void {
+  window.localStorage.setItem(ROLE_STORAGE_KEY, role);
 }
