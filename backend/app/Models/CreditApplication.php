@@ -41,12 +41,19 @@ class CreditApplication extends Model
 
     public const STATUS_REJECTED = 'REJECTED';
 
+    public const STATUS_APPOINTMENT_PROPOSED = 'APPOINTMENT_PROPOSED';
+
+    public const STATUS_APPOINTMENT_CONFIRMED = 'APPOINTMENT_CONFIRMED';
+
+    public const STATUS_APPOINTMENT_LOCKED = 'APPOINTMENT_LOCKED';
+
     /**
      * Order matters: index = how far the application has progressed. STAFF_REJECTED/REJECTED
      * are branch endpoints rather than "further along" in a strict sense, but their exact
      * position relative to STAFF_APPROVED/APPROVED is irrelevant — hasReached()/isLocked() only
      * ever compare against thresholds earlier in the flow (e.g. "has this at least reached
-     * SUBMITTED"), never against a sibling branch.
+     * SUBMITTED"), never against a sibling branch. Same reasoning covers the three appointment
+     * states appended here — REJECTED/STAFF_REJECTED applications never reach them.
      */
     public const STATUS_ORDER = [
         self::STATUS_DRAFT,
@@ -62,6 +69,9 @@ class CreditApplication extends Model
         self::STATUS_STAFF_REJECTED,
         self::STATUS_APPROVED,
         self::STATUS_REJECTED,
+        self::STATUS_APPOINTMENT_PROPOSED,
+        self::STATUS_APPOINTMENT_CONFIRMED,
+        self::STATUS_APPOINTMENT_LOCKED,
     ];
 
     protected $fillable = [
@@ -118,6 +128,22 @@ class CreditApplication extends Model
     public function validationSteps(): HasMany
     {
         return $this->hasMany(ValidationStep::class);
+    }
+
+    public function appointments(): HasMany
+    {
+        return $this->hasMany(Appointment::class);
+    }
+
+    /** The most recent proposal — the one currently awaiting (or having received) a decision. */
+    public function latestAppointment(): ?Appointment
+    {
+        return $this->appointments()->latest('attempt_number')->first();
+    }
+
+    public function reportMessages(): HasMany
+    {
+        return $this->hasMany(ReportMessage::class)->orderBy('created_at');
     }
 
     /**

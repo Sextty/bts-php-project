@@ -5,15 +5,17 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterController;
-use App\Http\Controllers\Auth\TelegramLinkController;
+use App\Http\Controllers\CreditApplication\AppointmentController;
 use App\Http\Controllers\CreditApplication\ClientController;
 use App\Http\Controllers\CreditApplication\CreditApplicationController;
 use App\Http\Controllers\CreditApplication\CreditRequestController;
 use App\Http\Controllers\CreditApplication\DocumentController;
 use App\Http\Controllers\CreditApplication\ProjectController;
+use App\Http\Controllers\CreditApplication\ReportController;
 use App\Http\Controllers\CreditApplication\ValidationController;
 use App\Http\Controllers\Staff\ApplicationController as StaffApplicationController;
 use App\Http\Controllers\Staff\AuthController as StaffAuthController;
+use App\Http\Controllers\Staff\ReportController as StaffReportController;
 use App\Http\Resources\UserResource;
 use Illuminate\Support\Facades\Route;
 
@@ -34,11 +36,6 @@ Route::prefix('auth')->group(function () {
         ->middleware('throttle:10,1');
     Route::post('google/verify-otp', [GoogleAuthController::class, 'verifyOtp'])
         ->middleware('throttle:10,1');
-
-    // Polled by the "Connect Telegram" screen — allowance is generous because the client polls
-    // this every couple of seconds while the user completes the handshake in another app.
-    Route::post('telegram/link-status', [TelegramLinkController::class, 'status'])
-        ->middleware('throttle:60,1');
 
     Route::post('logout', [LogoutController::class, 'logout'])
         ->middleware('auth:sanctum');
@@ -78,6 +75,16 @@ Route::middleware('auth:sanctum')->prefix('applications')->group(function () {
 
     Route::post('{application}/submit', [CreditApplicationController::class, 'submit'])
         ->middleware('throttle:10,1');
+
+    Route::get('{application}/appointment', [AppointmentController::class, 'show']);
+    Route::post('{application}/appointment/accept', [AppointmentController::class, 'accept'])
+        ->middleware('throttle:20,1');
+    Route::post('{application}/appointment/reject', [AppointmentController::class, 'reject'])
+        ->middleware('throttle:20,1');
+
+    Route::get('{application}/report/messages', [ReportController::class, 'index']);
+    Route::post('{application}/report/messages', [ReportController::class, 'store'])
+        ->middleware('throttle:30,1');
 });
 
 Route::prefix('staff')->group(function () {
@@ -93,6 +100,11 @@ Route::prefix('staff')->group(function () {
             ->middleware('throttle:20,1');
         Route::post('applications/{application}/reject', [StaffApplicationController::class, 'reject'])
             ->middleware('throttle:20,1');
+
+        Route::get('reports', [StaffReportController::class, 'index']);
+        Route::get('reports/{application}/messages', [StaffReportController::class, 'show']);
+        Route::post('reports/{application}/messages', [StaffReportController::class, 'store'])
+            ->middleware('throttle:30,1');
 
         // Admin-only final decision — staff.role:admin runs after staff, so $request->user() is
         // already confirmed to be a StaffUser by the time it checks the role column.

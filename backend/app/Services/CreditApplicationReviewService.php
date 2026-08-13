@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ApiException;
 use App\Models\CreditApplication;
 use App\Models\StaffUser;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Owns the internal review stage of the state machine (SUBMITTED → STAFF_APPROVED/STAFF_REJECTED
@@ -15,7 +16,10 @@ use App\Models\StaffUser;
  */
 class CreditApplicationReviewService
 {
-    public function __construct(private readonly AuditLogService $auditLog) {}
+    public function __construct(
+        private readonly AuditLogService $auditLog,
+        private readonly AppointmentSchedulingService $appointmentScheduling,
+    ) {}
 
     public function staffApprove(CreditApplication $application, StaffUser $staff, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
@@ -68,23 +72,36 @@ class CreditApplicationReviewService
     {
         $this->assertStatus($application, CreditApplication::STATUS_STAFF_APPROVED);
 
-        $application->update([
-            'status' => CreditApplication::STATUS_APPROVED,
-            'decided_by_admin_user_id' => $admin->id,
-        ]);
+        // Wrapped in a transaction: proposeNext() can throw (e.g. NO_BRANCH_AVAILABLE) if no
+        // branch is configured. Without this, the APPROVED write below would already be
+        // committed by the time that happens, stranding the application at APPROVED with no
+        // appointment and no way to retry — adminApprove() itself requires STAFF_APPROVED to
+        // run again. Rolling the whole chain back on failure keeps the application at
+        // STAFF_APPROVED, so admin-approve is safely retryable once a branch exists.
+        return DB::transaction(function () use ($application, $admin, $ip, $userAgent) {
+            $application->update([
+                'status' => CreditApplication::STATUS_APPROVED,
+                'decided_by_admin_user_id' => $admin->id,
+            ]);
 
-        $this->auditLog->log(
-            'credit_application.admin_approved',
-            $application->user,
-            previousState: ['status' => CreditApplication::STATUS_STAFF_APPROVED],
-            newState: ['status' => CreditApplication::STATUS_APPROVED],
-            ipAddress: $ip,
-            userAgent: $userAgent,
-            application: $application,
-            staffUser: $admin,
-        );
+            $this->auditLog->log(
+                'credit_application.admin_approved',
+                $application->user,
+                previousState: ['status' => CreditApplication::STATUS_STAFF_APPROVED],
+                newState: ['status' => CreditApplication::STATUS_APPROVED],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $application,
+                staffUser: $admin,
+            );
 
-        return $application->fresh();
+            // Chained transition, same pattern as confirmValidationTwoAndLock(): approval
+            // immediately triggers the first appointment proposal rather than leaving APPROVED
+            // as a dead end the customer has no way to act on.
+            $this->appointmentScheduling->proposeNext($application->fresh(), $ip, $userAgent);
+
+            return $application->fresh();
+        });
     }
 
     public function adminReject(CreditApplication $application, StaffUser $admin, string $reason, ?string $ip = null, ?string $userAgent = null): CreditApplication

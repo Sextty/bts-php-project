@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Staff;
 
+use App\Models\Branch;
 use App\Models\CreditApplication;
 use App\Models\StaffUser;
 use App\Models\User;
@@ -23,6 +24,8 @@ class StaffReviewTest extends TestCase
         parent::setUp();
         Storage::fake('documents');
         $this->customer = User::factory()->create();
+        // admin-approve auto-proposes the first appointment, which needs a matchable branch.
+        Branch::factory()->default()->create();
     }
 
     /** Drives a fresh application through the customer flow to SUBMITTED, as $this->customer. */
@@ -139,9 +142,11 @@ class StaffReviewTest extends TestCase
             ->assertJsonPath('data.application.status', CreditApplication::STATUS_STAFF_APPROVED);
 
         Sanctum::actingAs($admin, ['*']);
+        // adminApprove() chains straight into the first appointment proposal, so the
+        // application's resting status is APPOINTMENT_PROPOSED, not APPROVED.
         $this->postJson("/api/staff/applications/{$application->id}/admin-approve")
             ->assertOk()
-            ->assertJsonPath('data.application.status', CreditApplication::STATUS_APPROVED);
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_APPOINTMENT_PROPOSED);
 
         $application->refresh();
         $this->assertSame($staff->id, $application->decided_by_staff_user_id);
