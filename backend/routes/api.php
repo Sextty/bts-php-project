@@ -13,8 +13,10 @@ use App\Http\Controllers\CreditApplication\DocumentController;
 use App\Http\Controllers\CreditApplication\ProjectController;
 use App\Http\Controllers\CreditApplication\ReportController;
 use App\Http\Controllers\CreditApplication\ValidationController;
+use App\Http\Controllers\Staff\ActivityController as StaffActivityController;
 use App\Http\Controllers\Staff\ApplicationController as StaffApplicationController;
 use App\Http\Controllers\Staff\AuthController as StaffAuthController;
+use App\Http\Controllers\Staff\DashboardController as StaffDashboardController;
 use App\Http\Controllers\Staff\ReportController as StaffReportController;
 use App\Http\Resources\UserResource;
 use Illuminate\Support\Facades\Route;
@@ -101,6 +103,12 @@ Route::prefix('staff')->group(function () {
         Route::post('applications/{application}/reject', [StaffApplicationController::class, 'reject'])
             ->middleware('throttle:20,1');
 
+        // Logs & traffic — both roles may look, but ActivityLogService narrows rows and columns
+        // by the authenticated staff user's role, so "staff can enter" never means "staff sees
+        // customer IPs and auth events".
+        Route::get('activity', [StaffActivityController::class, 'index']);
+        Route::get('activity/traffic', [StaffActivityController::class, 'traffic']);
+
         Route::get('reports', [StaffReportController::class, 'index']);
         Route::get('reports/{application}/messages', [StaffReportController::class, 'show']);
         Route::post('reports/{application}/messages', [StaffReportController::class, 'store'])
@@ -109,6 +117,8 @@ Route::prefix('staff')->group(function () {
         // Admin-only final decision — staff.role:admin runs after staff, so $request->user() is
         // already confirmed to be a StaffUser by the time it checks the role column.
         Route::middleware('staff.role:admin')->group(function () {
+            Route::get('dashboard', [StaffDashboardController::class, 'index']);
+
             Route::post('applications/{application}/admin-approve', [StaffApplicationController::class, 'adminApprove'])
                 ->middleware('throttle:20,1');
             Route::post('applications/{application}/admin-reject', [StaffApplicationController::class, 'adminReject'])

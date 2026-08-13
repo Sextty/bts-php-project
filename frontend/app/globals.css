@@ -154,3 +154,30 @@
 @utility card-surface-empty {
   @apply border-border/60 border-dashed shadow-none;
 }
+
+/*
+ * Data-visualisation palette. Deliberately NOT the brand crimson: chart series need hues that
+ * stay separable under colour-blindness, which a single brand hue cannot provide. These are the
+ * first three categorical slots, validated against this app's real card surfaces (#ffffff light,
+ * #17181e dark) — every check passes in both modes. The one light-mode warning (aqua at 2.82:1)
+ * is answered by always shipping a legend plus direct end-labels, never colour alone.
+ *
+ * Slot order is the colour-blindness safety mechanism, not decoration — do not reorder or add a
+ * fourth generated hue.
+ */
+:root {
+  --viz-series-1: #2a78d6; /* blue   */
+  --viz-series-2: #eb6834; /* orange */
+  --viz-series-3: #1baf7a; /* aqua   */
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+}
+
+.dark {
+  /* Same three hues re-stepped for the dark surface — not an automatic flip. */
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+}

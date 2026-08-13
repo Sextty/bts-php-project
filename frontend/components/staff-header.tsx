@@ -62,6 +62,15 @@ export function StaffHeader({ role }: { role: 'staff' | 'admin' }) {
           >
             Reports
           </Link>
+          <Link
+            href="/staff/activity"
+            className={cn(
+              'rounded-md px-2.5 py-1.5 font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+              pathname?.startsWith('/staff/activity') && 'bg-accent text-accent-foreground hover:bg-accent'
+            )}
+          >
+            Logs
+          </Link>
         </nav>
       </div>
       <Button onClick={handleLogout} variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
