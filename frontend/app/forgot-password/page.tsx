@@ -2,8 +2,10 @@
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import { MailCheck } from 'lucide-react';
 import { AuthCard } from '@/components/auth-card';
 import { ErrorAlert } from '@/components/error-alert';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,7 +36,10 @@ export default function ForgotPasswordPage() {
     <AuthCard title="Reset your password" description="We'll email you a link to reset your password.">
       <ErrorAlert message={error} />
       {message ? (
-        <p className="text-sm text-foreground">{message}</p>
+        <Alert className="border-primary/30 bg-primary/5">
+          <MailCheck className="size-4 text-primary" />
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">

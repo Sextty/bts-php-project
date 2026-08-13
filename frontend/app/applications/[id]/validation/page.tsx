@@ -30,6 +30,7 @@ import {
 } from '@/lib/api/credit-applications';
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
+import { PageLoading } from '@/components/page-loading';
 
 export default function ValidationStepPage() {
   const router = useRouter();
@@ -102,7 +103,7 @@ export default function ValidationStepPage() {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <PageLoading />;
   }
   if (!application) return null;
 
@@ -120,8 +121,8 @@ export default function ValidationStepPage() {
         <ErrorAlert message={error} />
 
         {!readyForValidation ? (
-          <Card className="border-border/60 shadow-sm">
-            <CardContent className="space-y-3 py-8 text-center text-sm text-muted-foreground">
+          <Card className="card-surface">
+            <CardContent className="space-y-3 py-12 text-center text-sm text-muted-foreground">
               <p>Complete the Client, Crédit, and Projet steps before validating.</p>
               <Link href={`/applications/${applicationId}/client`} className="font-medium text-primary underline">
                 Go to Étape 1
@@ -130,11 +131,11 @@ export default function ValidationStepPage() {
           </Card>
         ) : (
           <div className="space-y-6">
-            <Card className="border-border/60 shadow-sm">
+            <Card className="card-surface">
               <CardHeader>
-                <CardTitle className="text-base">Client</CardTitle>
+                <CardTitle>Client</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2 text-sm">
+              <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                 <SummaryRow label="Nom" value={`${application.client!.prenom} ${application.client!.nom}`} />
                 <SummaryRow label="Code client" value={application.client!.code_client} />
                 <SummaryRow label="Type de pièce" value={`${application.client!.type_pid} — ${application.client!.numero_pid}`} />
@@ -142,11 +143,11 @@ export default function ValidationStepPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/60 shadow-sm">
+            <Card className="card-surface">
               <CardHeader>
-                <CardTitle className="text-base">Demande de Crédit</CardTitle>
+                <CardTitle>Demande de Crédit</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2 text-sm">
+              <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                 <SummaryRow label="N° Demande" value={application.credit_request!.n_demande} />
                 <SummaryRow label="Type" value={application.credit_request!.type_demande} />
                 <SummaryRow
@@ -156,11 +157,11 @@ export default function ValidationStepPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/60 shadow-sm">
+            <Card className="card-surface">
               <CardHeader>
-                <CardTitle className="text-base">Projet</CardTitle>
+                <CardTitle>Projet</CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-2 text-sm">
+              <CardContent className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                 <SummaryRow label="Code projet" value={application.project!.code_projet} />
                 <SummaryRow label="Type" value={application.project!.type_projet} />
                 <SummaryRow label="Coût" value={application.project!.cout} />
@@ -168,9 +169,9 @@ export default function ValidationStepPage() {
               </CardContent>
             </Card>
 
-            <Card className="border-border/60 shadow-sm">
+            <Card className="card-surface">
               <CardHeader>
-                <CardTitle className="text-base">Documents</CardTitle>
+                <CardTitle>Documents</CardTitle>
               </CardHeader>
               <CardContent>
                 {application.documents && application.documents.length > 0 ? (

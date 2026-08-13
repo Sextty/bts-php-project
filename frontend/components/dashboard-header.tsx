@@ -13,6 +13,9 @@ export function DashboardHeader() {
   async function handleLogout() {
     try {
       await logout();
+    } catch {
+      // Logging out locally must succeed even if the server call fails (e.g. the token already
+      // expired) — the user's intent is to end their session either way.
     } finally {
       clearToken();
       router.push('/login');

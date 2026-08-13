@@ -27,9 +27,11 @@ import {
 } from '@/lib/api/credit-applications';
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
+import { PageLoading } from '@/components/page-loading';
 
-const EMPTY_CLIENT: ClientDto = {
-  code_client: '',
+type FormState = Omit<ClientDto, 'code_client'>;
+
+const EMPTY_CLIENT: FormState = {
   civilite: '',
   nom: '',
   prenom: '',
@@ -66,7 +68,7 @@ export default function ClientStepPage() {
   const applicationId = Number(params.id);
 
   const [application, setApplication] = useState<CreditApplicationDto | null>(null);
-  const [form, setForm] = useState<ClientDto>(EMPTY_CLIENT);
+  const [form, setForm] = useState<FormState>(EMPTY_CLIENT);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -127,7 +129,7 @@ export default function ClientStepPage() {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <PageLoading />;
   }
   if (!application) return null;
 
@@ -141,45 +143,47 @@ export default function ClientStepPage() {
           <ApplicationStepper status={application.status} current="client" />
         </div>
 
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
             <CardTitle>Client — Personne Physique</CardTitle>
+            {application.client?.code_client && (
+              <p className="text-sm text-muted-foreground">
+                Code client: <span className="font-medium text-foreground">{application.client.code_client}</span>
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <ErrorAlert message={error} />
             <form onSubmit={handleSubmit} className="space-y-4">
               <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Code client" id="code_client" value={form.code_client} onChange={(v) => setForm({ ...form, code_client: v })} />
-                  <div className="space-y-2">
-                    <Label htmlFor="civilite">Civilité</Label>
-                    <Select value={form.civilite} onValueChange={(v) => setForm({ ...form, civilite: v ?? '' })}>
-                      <SelectTrigger id="civilite"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="M">M</SelectItem>
-                        <SelectItem value="Mme">Mme</SelectItem>
-                        <SelectItem value="Mlle">Mlle</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="civilite">Civilité</Label>
+                  <Select value={form.civilite} onValueChange={(v) => setForm({ ...form, civilite: v ?? '' })}>
+                    <SelectTrigger id="civilite"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="M">M</SelectItem>
+                      <SelectItem value="Mme">Mme</SelectItem>
+                      <SelectItem value="Mlle">Mlle</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Nom" id="nom" value={form.nom} onChange={(v) => setForm({ ...form, nom: v })} />
                   <Field label="Prénom" id="prenom" value={form.prenom} onChange={(v) => setForm({ ...form, prenom: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Nom d'époux" id="nom_epoux" value={form.nom_epoux ?? ''} onChange={(v) => setForm({ ...form, nom_epoux: v })} optional />
                   <Field label="2ème prénom" id="deuxieme_prenom" value={form.deuxieme_prenom ?? ''} onChange={(v) => setForm({ ...form, deuxieme_prenom: v })} optional />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Date de naissance" id="date_naissance" type="date" value={form.date_naissance} onChange={(v) => setForm({ ...form, date_naissance: v })} />
                   <Field label="Lieu de naissance" id="lieu_naissance" value={form.lieu_naissance} onChange={(v) => setForm({ ...form, lieu_naissance: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Pays de naissance" id="pays_naissance" value={form.pays_naissance} onChange={(v) => setForm({ ...form, pays_naissance: v })} />
                   <Field label="Nationalité" id="nationalite" value={form.nationalite} onChange={(v) => setForm({ ...form, nationalite: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Pays de résidence" id="pays_residence" value={form.pays_residence} onChange={(v) => setForm({ ...form, pays_residence: v })} />
                   <div className="space-y-2">
                     <Label htmlFor="etat_civil">État civil</Label>
@@ -195,7 +199,7 @@ export default function ClientStepPage() {
                   </div>
                 </div>
                 <Field label="Nombre d'enfants" id="nombre_enfants" type="number" value={String(form.nombre_enfants)} onChange={(v) => setForm({ ...form, nombre_enfants: Number(v) })} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="type_pid">Type de pièce</Label>
                     <Select value={form.type_pid} onValueChange={(v) => setForm({ ...form, type_pid: v ?? '' })}>
@@ -209,12 +213,12 @@ export default function ClientStepPage() {
                   </div>
                   <Field label="N° pièce" id="numero_pid" value={form.numero_pid} onChange={(v) => setForm({ ...form, numero_pid: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Date de délivrance" id="date_delivrance_pid" type="date" value={form.date_delivrance_pid} onChange={(v) => setForm({ ...form, date_delivrance_pid: v })} />
                   <Field label="Lieu de délivrance" id="lieu_delivrance_pid" value={form.lieu_delivrance_pid} onChange={(v) => setForm({ ...form, lieu_delivrance_pid: v })} />
                 </div>
                 <Field label="N° carte de séjour étrangère" id="numero_carte_sejour" value={form.numero_carte_sejour ?? ''} onChange={(v) => setForm({ ...form, numero_carte_sejour: v })} optional />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Profession" id="profession" value={form.profession} onChange={(v) => setForm({ ...form, profession: v })} />
                   <Field label="Date d'entrée en relation" id="date_entree_relation" type="date" value={form.date_entree_relation} onChange={(v) => setForm({ ...form, date_entree_relation: v })} />
                 </div>
@@ -229,9 +233,9 @@ export default function ClientStepPage() {
           </CardContent>
         </Card>
 
-        <Card className="mt-6 border-border/60 shadow-sm">
+        <Card className="card-surface mt-6">
           <CardHeader>
-            <CardTitle className="text-base">Documents justificatifs</CardTitle>
+            <CardTitle>Documents justificatifs</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {DOCUMENT_TYPES.map((docType) => {

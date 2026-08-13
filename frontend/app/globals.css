@@ -129,3 +129,28 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Canonical heading and card-surface classes. Use these instead of re-guessing raw Tailwind
+ * classes for a new page — they're the single source of truth for "what does a title/card look
+ * like at this level," so drift doesn't creep back in one page at a time.
+ */
+@utility text-hero-title {
+  @apply text-4xl font-bold tracking-tight sm:text-5xl;
+}
+@utility text-title-lg {
+  @apply text-2xl font-semibold tracking-tight;
+}
+@utility text-title {
+  @apply text-xl font-semibold tracking-tight;
+}
+
+@utility card-surface {
+  @apply border-border/60 shadow-sm;
+}
+@utility card-surface-flat {
+  @apply border-border/60 shadow-none;
+}
+@utility card-surface-empty {
+  @apply border-border/60 border-dashed shadow-none;
+}

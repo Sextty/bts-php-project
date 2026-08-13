@@ -18,6 +18,7 @@ import {
 } from '@/lib/api/credit-applications';
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
+import { PageLoading } from '@/components/page-loading';
 
 const EMPTY_FORM: ProjectDto = {
   code_projet: '',
@@ -81,7 +82,7 @@ export default function ProjectStepPage() {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <PageLoading />;
   }
   if (!application) return null;
 
@@ -95,7 +96,7 @@ export default function ProjectStepPage() {
           <ApplicationStepper status={application.status} current="project" />
         </div>
 
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader>
             <CardTitle>Informations Projet</CardTitle>
           </CardHeader>
@@ -103,15 +104,15 @@ export default function ProjectStepPage() {
             <ErrorAlert message={error} />
             <form onSubmit={handleSubmit} className="space-y-4">
               <fieldset disabled={locked} className="space-y-4 disabled:opacity-60">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Code projet" id="code_projet" value={form.code_projet} onChange={(v) => setForm({ ...form, code_projet: v })} />
                   <Field label="Type de projet" id="type_projet" value={form.type_projet} onChange={(v) => setForm({ ...form, type_projet: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Identifiant personne" id="identifiant_personne" value={form.identifiant_personne} onChange={(v) => setForm({ ...form, identifiant_personne: v })} />
                   <Field label="Activité" id="activite" value={form.activite} onChange={(v) => setForm({ ...form, activite: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Nom ou RS" id="nom_ou_rs" value={form.nom_ou_rs} onChange={(v) => setForm({ ...form, nom_ou_rs: v })} />
                   <Field label="Prénom ou DC" id="prenom_ou_dc" value={form.prenom_ou_dc} onChange={(v) => setForm({ ...form, prenom_ou_dc: v })} />
                 </div>
@@ -129,19 +130,19 @@ export default function ProjectStepPage() {
                   />
                 </div>
                 <Field label="Adresse" id="adresse" value={form.adresse} onChange={(v) => setForm({ ...form, adresse: v })} />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Ville" id="ville" value={form.ville} onChange={(v) => setForm({ ...form, ville: v })} />
                   <Field label="Code postal" id="code_postal" value={form.code_postal} onChange={(v) => setForm({ ...form, code_postal: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Délégation" id="delegation" value={form.delegation} onChange={(v) => setForm({ ...form, delegation: v })} />
                   <Field label="Localisation" id="localisation" value={form.localisation} onChange={(v) => setForm({ ...form, localisation: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Coût" id="cout" type="number" value={String(form.cout)} onChange={(v) => setForm({ ...form, cout: v })} />
                   <Field label="Investissement personnel" id="investissement_personnel" type="number" value={String(form.investissement_personnel)} onChange={(v) => setForm({ ...form, investissement_personnel: v })} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Financement" id="financement" type="number" value={String(form.financement)} onChange={(v) => setForm({ ...form, financement: v })} />
                   <Field label="Revenus" id="revenus" type="number" value={String(form.revenus)} onChange={(v) => setForm({ ...form, revenus: v })} />
                 </div>

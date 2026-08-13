@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { staffLogin } from '@/lib/api/staff';
-import { setStaffToken } from '@/lib/auth/staff-token';
+import { setStaffToken, setStaffRole } from '@/lib/auth/staff-token';
 import { ApiError } from '@/lib/api/client';
 
 export default function StaffLoginPage() {
@@ -25,6 +25,7 @@ export default function StaffLoginPage() {
     try {
       const result = await staffLogin({ email, password });
       setStaffToken(result.access_token);
+      setStaffRole(result.staff_user.role);
       router.push(result.staff_user.role === 'admin' ? '/staff/admin' : '/staff/dashboard');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');

@@ -27,11 +27,6 @@ export default function LoginPage() {
       const result = await login({ identifier, password });
       const token = encodeURIComponent(result.pre_auth_token);
 
-      if (result.requires_telegram_link) {
-        router.push(`/login/link-telegram?pre_auth_token=${token}&link_url=${encodeURIComponent(result.telegram_link_url ?? '')}`);
-        return;
-      }
-
       router.push(`/login/verify-otp?pre_auth_token=${token}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
@@ -41,7 +36,7 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthCard title="Log in" description="We'll send a verification code to your Telegram every time you sign in.">
+    <AuthCard title="Log in" description="We'll send a verification code to your email every time you sign in.">
       <ErrorAlert message={error} />
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">

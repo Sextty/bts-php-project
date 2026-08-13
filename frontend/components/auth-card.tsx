@@ -28,9 +28,9 @@ export function AuthCard({
             BTS <span className="font-normal text-muted-foreground">Bank</span>
           </span>
         </Link>
-        <Card className="w-full border-border/60 shadow-sm">
+        <Card className="card-surface w-full">
           <CardHeader>
-            <CardTitle className="text-2xl">{title}</CardTitle>
+            <CardTitle className="text-title-lg">{title}</CardTitle>
             {description && <CardDescription>{description}</CardDescription>}
           </CardHeader>
           <CardContent>{children}</CardContent>

@@ -33,13 +33,6 @@ export default function RegisterPage() {
       const result = await register(form);
       const token = encodeURIComponent(result.pre_auth_token);
 
-      // A brand-new account has no Telegram chat yet, so the code has nowhere to go until the
-      // user completes the one-time handshake.
-      if (result.requires_telegram_link) {
-        router.push(`/register/link-telegram?pre_auth_token=${token}&link_url=${encodeURIComponent(result.telegram_link_url ?? '')}`);
-        return;
-      }
-
       router.push(`/register/verify-otp?pre_auth_token=${token}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
@@ -49,10 +42,10 @@ export default function RegisterPage() {
   }
 
   return (
-    <AuthCard title="Create an account" description="We'll send a verification code to your Telegram once you submit.">
+    <AuthCard title="Create an account" description="We'll send a verification code to your email once you submit.">
       <ErrorAlert message={error} />
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="first_name">First name</Label>
             <Input

@@ -50,7 +50,7 @@ export default function Home() {
       <section className="relative mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-6 py-16 text-center">
         <Logo size={72} />
         <div className="space-y-4">
-          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
+          <h1 className="text-hero-title">
             Credit applications, <span className="text-primary">simplified</span>
           </h1>
           <p className="mx-auto max-w-lg text-lg text-muted-foreground">
@@ -70,7 +70,7 @@ export default function Home() {
 
       <section className="relative mx-auto grid w-full max-w-4xl grid-cols-1 gap-4 px-6 pb-20 sm:grid-cols-3">
         {FEATURES.map(({ icon: Icon, title, description }) => (
-          <Card key={title} className="border-border/60 text-left shadow-none">
+          <Card key={title} className="card-surface-flat text-left">
             <CardContent className="space-y-2 pt-2">
               <div className="flex size-9 items-center justify-center rounded-lg bg-accent">
                 <Icon className="size-4.5 text-accent-foreground" />

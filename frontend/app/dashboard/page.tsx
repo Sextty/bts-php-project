@@ -13,6 +13,7 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { getCurrentUser, type UserDto } from '@/lib/api/auth';
 import { clearToken, getToken } from '@/lib/auth/token';
 import { cn } from '@/lib/utils';
+import { PageLoading } from '@/components/page-loading';
 
 function initials(user: UserDto): string {
   return `${user.first_name[0] ?? ''}${user.last_name[0] ?? ''}`.toUpperCase();
@@ -38,7 +39,7 @@ export default function DashboardPage() {
   }, [router]);
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <PageLoading />;
   }
 
   if (!user) return null;
@@ -47,7 +48,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-muted/30">
       <DashboardHeader />
       <main className="mx-auto max-w-2xl px-4 py-10">
-        <Card className="mb-6 border-border/60 shadow-sm">
+        <Card className="card-surface mb-6">
           <CardContent className="flex items-center justify-between py-5">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-lg bg-accent">
@@ -64,7 +65,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/60 shadow-sm">
+        <Card className="card-surface">
           <CardHeader className="flex-row items-center gap-4 space-y-0">
             <Avatar className="size-14">
               <AvatarFallback className="bg-primary text-lg font-semibold text-primary-foreground">
@@ -72,7 +73,7 @@ export default function DashboardPage() {
               </AvatarFallback>
             </Avatar>
             <div>
-              <CardTitle className="text-xl">
+              <CardTitle className="text-title-lg">
                 {user.first_name} {user.last_name}
               </CardTitle>
               <p className="text-sm text-muted-foreground">Welcome back</p>

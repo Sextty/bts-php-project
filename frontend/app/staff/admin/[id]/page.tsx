@@ -14,6 +14,7 @@ import {
 } from '@/lib/api/staff';
 import { ApiError } from '@/lib/api/client';
 import { getStaffToken } from '@/lib/auth/staff-token';
+import { PageLoading } from '@/components/page-loading';
 
 export default function AdminApplicationDetailPage() {
   const router = useRouter();
@@ -63,7 +64,7 @@ export default function AdminApplicationDetailPage() {
   }
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+    return <PageLoading />;
   }
   if (!application) return null;
 

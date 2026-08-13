@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ChevronRight, Inbox } from 'lucide-react';
 import { StaffHeader } from '@/components/staff-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { listStaffApplications, type StaffApplicationDto } from '@/lib/api/staff';
 import { ApiError } from '@/lib/api/client';
 import { getStaffToken } from '@/lib/auth/staff-token';
+import { InlineLoading } from '@/components/page-loading';
 
 export default function StaffDashboardPage() {
   const router = useRouter();
@@ -31,38 +33,50 @@ export default function StaffDashboardPage() {
     <div className="min-h-screen bg-muted/30">
       <StaffHeader role="staff" />
       <main className="mx-auto max-w-4xl px-4 py-10">
-        <h1 className="mb-6 text-xl font-semibold tracking-tight">Applications awaiting review</h1>
+        <div className="mb-6">
+          <h1 className="text-title">Applications awaiting review</h1>
+          {!loading && (
+            <p className="text-sm text-muted-foreground">
+              {applications.length === 0 ? 'Queue is empty' : `${applications.length} application${applications.length === 1 ? '' : 's'} to review`}
+            </p>
+          )}
+        </div>
 
         <ErrorAlert message={error} />
 
         {loading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <InlineLoading />
         ) : applications.length === 0 ? (
-          <Card className="border-border/60 border-dashed shadow-none">
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+          <Card className="card-surface-empty">
+            <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
+              <Inbox className="size-8 text-muted-foreground/40" />
               Nothing waiting for review right now.
             </CardContent>
           </Card>
         ) : (
-          <Card className="border-border/60 shadow-sm">
+          <Card className="card-surface">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>N° Demande</TableHead>
                   <TableHead>Applicant</TableHead>
                   <TableHead>Submitted</TableHead>
+                  <TableHead className="w-8" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {applications.map((app) => (
                   <TableRow
                     key={app.id}
-                    className="cursor-pointer"
+                    className="cursor-pointer transition-colors hover:bg-accent/40"
                     onClick={() => router.push(`/staff/dashboard/${app.id}`)}
                   >
                     <TableCell className="font-medium">{app.credit_request?.n_demande ?? `#${app.id}`}</TableCell>
                     <TableCell>{app.applicant?.name ?? '—'}</TableCell>
                     <TableCell>{app.submitted_at ? new Date(app.submitted_at).toLocaleDateString() : '—'}</TableCell>
+                    <TableCell>
+                      <ChevronRight className="size-4 text-muted-foreground/50" />
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
