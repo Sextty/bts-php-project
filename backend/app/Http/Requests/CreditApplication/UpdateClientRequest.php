@@ -10,6 +10,11 @@ use Illuminate\Foundation\Http\FormRequest;
  * save of this step, not a partial-autosave shape. A few fields are conditionally optional by
  * nature (nom_epoux only applies if married, deuxieme_prenom is genuinely optional,
  * numero_carte_sejour only applies to foreign residents).
+ *
+ * code_client is deliberately NOT a validated input field here — it's server-generated (see
+ * CreditApplicationService::saveClient(), same pattern as n_demande on Étape 2) — so any
+ * client-supplied value is ignored rather than validated; the customer's own reference number is
+ * never trusted.
  */
 class UpdateClientRequest extends FormRequest
 {
@@ -21,7 +26,6 @@ class UpdateClientRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'code_client' => ['required', 'string', 'max:50'],
             'civilite' => ['required', 'string', 'in:M,Mme,Mlle'],
             'nom' => ['required', 'string', 'max:150'],
             'prenom' => ['required', 'string', 'max:150'],

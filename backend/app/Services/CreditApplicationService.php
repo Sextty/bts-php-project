@@ -61,6 +61,14 @@ class CreditApplicationService
     {
         $this->assertEditable($application);
 
+        $existing = $application->client;
+
+        // The customer never supplies code_client — it's assigned once, on first save of this
+        // step, and never regenerated on subsequent edits. Same pattern as n_demande on Étape 2.
+        if (! $existing || ! $existing->code_client) {
+            $data['code_client'] = $this->numberService->generate('CL');
+        }
+
         $client = $application->client()->updateOrCreate(['credit_application_id' => $application->id], $data);
 
         $this->bumpStatus($application, CreditApplication::STATUS_STEP_1_COMPLETED);

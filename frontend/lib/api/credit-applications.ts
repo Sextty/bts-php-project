@@ -13,7 +13,10 @@ export type ApplicationStatus =
   | 'STAFF_APPROVED'
   | 'STAFF_REJECTED'
   | 'APPROVED'
-  | 'REJECTED';
+  | 'REJECTED'
+  | 'APPOINTMENT_PROPOSED'
+  | 'APPOINTMENT_CONFIRMED'
+  | 'APPOINTMENT_LOCKED';
 
 export interface ClientDto {
   code_client: string;
@@ -83,6 +86,10 @@ export interface DocumentDto {
   mime_type: string;
   size_bytes: number;
   uploaded_at: string;
+  ai_verified_at: string | null;
+  ai_is_valid: boolean | null;
+  ai_confidence: 'high' | 'medium' | 'low' | null;
+  ai_comment: string | null;
 }
 
 export interface ValidationStepDto {
@@ -118,7 +125,7 @@ export function getApplication(id: number) {
   return apiFetch<{ application: CreditApplicationDto }>(`/applications/${id}`, { auth: true });
 }
 
-export function updateClient(id: number, input: ClientDto) {
+export function updateClient(id: number, input: Omit<ClientDto, 'code_client'>) {
   return apiFetch<{ application: CreditApplicationDto }>(`/applications/${id}/client`, {
     method: 'PUT',
     body: input,
