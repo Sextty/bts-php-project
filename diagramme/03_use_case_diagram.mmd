@@ -1,0 +1,120 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E3F2FD',
+    'primaryBorderColor': '#1565C0',
+    'primaryTextColor': '#0D47A1',
+    'lineColor': '#37474F',
+    'fontSize': '12px',
+    'fontFamily': 'Segoe UI, Roboto, sans-serif'
+  }
+}}%%
+
+flowchart TB
+    %% ----------------------------------------------------
+    %% BTS BANK - USE CASE DIAGRAM
+    %% ----------------------------------------------------
+
+    subgraph ACTORS["ACTEURS DU SYSTEME"]
+        direction LR
+        CLIENT((("Client / Demandeur"))):::actorClient
+        STAFF((("Agent Staff Agence"))):::actorStaff
+        ADMIN((("Administrateur Central"))):::actorAdmin
+        AI((("Google Gemini AI Vision"))):::actorAI
+    end
+
+    subgraph SYSTEM["BTS BANK SYSTEM"]
+        direction TB
+
+        subgraph AUTH_MODULE["Module Authentification & Compte"]
+            UC_REG(["S'inscrire en ligne"]):::ucAuth
+            UC_OTP(["Vérifier code OTP"]):::ucAuth
+            UC_LOGIN(["Se connecter (Sanctum)"]):::ucAuth
+            UC_GOOGLE(["Connexion Google OAuth"]):::ucAuth
+        end
+
+        subgraph CREDIT_MODULE["Module Demande de Crédit (4 Étapes)"]
+            UC_STEP1(["Étape 1: Identité (CIN)"]):::ucCredit
+            UC_STEP2(["Étape 2: Crédit & Agence (OSM)"]):::ucCredit
+            UC_STEP3(["Étape 3: Projet d'Entreprise"]):::ucCredit
+            UC_STEP4(["Étape 4: Téléverser Pièces"]):::ucCredit
+            UC_AI_CHECK(["Vérifier par Google Gemini IA"]):::ucCredit
+            UC_SUBMIT(["Valider & Soumettre"]):::ucCredit
+            UC_TRACK(["Suivre Statut du Dossier"]):::ucCredit
+        end
+
+        subgraph REVIEW_MODULE["Module Instruction & Décision"]
+            UC_STAFF_REV(["Examiner Dossier (L1)"]):::ucReview
+            UC_STAFF_DEC(["Approuver / Rejeter (L1)"]):::ucReview
+            UC_ADMIN_DEC(["Décision Finale (L2 Admin)"]):::ucReview
+            UC_AUTO_APPT(["Génération Auto RDV"]):::ucReview
+        end
+
+        subgraph COLLAB_MODULE["Module Collaboration & Agence"]
+            UC_CHAT(["Discuter sur Dossier"]):::ucCollab
+            UC_APPT_CONFIRM(["Confirmer / Reprogrammer RDV"]):::ucCollab
+            UC_NOTIF(["Recevoir Notifications"]):::ucCollab
+        end
+
+        subgraph ADMIN_MODULE["Module Pilotage & Audit"]
+            UC_STATS(["Consulter KPIs & Stats"]):::ucAdmin
+            UC_AUDIT(["Journal d'Audit & Traçabilité"]):::ucAdmin
+            UC_STAFF_MGMT(["Gouvernance Comptes Staff"]):::ucAdmin
+        end
+    end
+
+    %% Relations Client
+    CLIENT --> UC_REG
+    CLIENT --> UC_OTP
+    CLIENT --> UC_LOGIN
+    CLIENT --> UC_GOOGLE
+    CLIENT --> UC_STEP1
+    CLIENT --> UC_STEP2
+    CLIENT --> UC_STEP3
+    CLIENT --> UC_STEP4
+    CLIENT --> UC_SUBMIT
+    CLIENT --> UC_TRACK
+    CLIENT --> UC_CHAT
+    CLIENT --> UC_APPT_CONFIRM
+    CLIENT --> UC_NOTIF
+
+    %% Relations Staff
+    STAFF --> UC_LOGIN
+    STAFF --> UC_STAFF_REV
+    STAFF --> UC_STAFF_DEC
+    STAFF --> UC_CHAT
+
+    %% Relations Admin
+    ADMIN --> UC_LOGIN
+    ADMIN --> UC_ADMIN_DEC
+    ADMIN --> UC_STATS
+    ADMIN --> UC_AUDIT
+    ADMIN --> UC_STAFF_MGMT
+
+    %% Relations AI
+    AI --> UC_AI_CHECK
+
+    %% Triggers & Includes
+    UC_STEP4 -.->|Déclenche| UC_AI_CHECK
+    UC_ADMIN_DEC -.->|Si Approbation L2| UC_AUTO_APPT
+    UC_AUTO_APPT -.->|Propose créneau| UC_APPT_CONFIRM
+
+    %% Class Definitions
+    classDef actorClient fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef actorStaff fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C
+    classDef actorAdmin fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef actorAI fill:#FCE4EC,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    classDef ucAuth fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef ucCredit fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef ucReview fill:#FFF8E1,stroke:#F57F17,stroke-width:2px,color:#E65100
+    classDef ucCollab fill:#E0F7FA,stroke:#00695C,stroke-width:2px,color:#004D40
+    classDef ucAdmin fill:#EDE7F6,stroke:#4527A0,stroke-width:2px,color:#311B92
+
+    %% Subgraph Styling
+    style ACTORS fill:#F8F9FA,stroke:#90A4AE,stroke-width:1.5px
+    style SYSTEM fill:#FAFAFA,stroke:#B0BEC5,stroke-width:1.5px
+    style AUTH_MODULE fill:#F1F8E9,stroke:#A5D6A7,stroke-width:1px
+    style CREDIT_MODULE fill:#E3F2FD,stroke:#90CAF9,stroke-width:1px
+    style REVIEW_MODULE fill:#FFF8E1,stroke:#FFE082,stroke-width:1px
+    style COLLAB_MODULE fill:#E0F7FA,stroke:#80CBC4,stroke-width:1px
+    style ADMIN_MODULE fill:#EDE7F6,stroke:#B39DDB,stroke-width:1px

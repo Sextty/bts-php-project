@@ -1,0 +1,93 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E3F2FD',
+    'primaryBorderColor': '#1976D2',
+    'primaryTextColor': '#0D47A1',
+    'actorLineColor': '#455A64',
+    'actorBkg': '#E3F2FD',
+    'actorBorder': '#1565C0',
+    'actorTextColor': '#0D47A1',
+    'signalColor': '#37474F',
+    'signalTextColor': '#263238',
+    'labelBoxBkgColor': '#ECEFF1',
+    'labelBoxBorderColor': '#B0BEC5',
+    'labelTextColor': '#263238',
+    'loopTextColor': '#263238',
+    'noteBorderColor': '#90CAF9',
+    'noteBkgColor': '#E3F2FD',
+    'noteTextColor': '#0D47A1',
+    'activationBorderColor': '#1976D2',
+    'activationBkgColor': '#BBDEFB',
+    'sequenceNumberColor': '#FFFFFF'
+  }
+}}%%
+sequenceDiagram
+    %% ----------------------------------------------------
+    %% BTS BANK - SEQUENCE: AUTHENTICATION & ONBOARDING
+    %% ----------------------------------------------------
+    autonumber
+
+    box rgb(227, 242, 253) Frontend
+        actor User as "Client / Demandeur"
+        participant FE as "Client Portal (Next.js 3000)"
+    end
+
+    box rgb(255, 243, 224) Backend Services
+        participant API as "API Gateway / AuthController"
+        participant OTP as "OtpService"
+        participant DB as "MySQL Database"
+    end
+
+    box rgb(232, 245, 233) External
+        participant Mail as "Gmail SMTP / Resend"
+    end
+
+    %% ----------------------------------------------------
+    %% 1. REGISTRATION FLOW (Blue Rect)
+    %% ----------------------------------------------------
+    rect rgb(227, 242, 253)
+        note over User, Mail: 1. Registration Flow (Inscription & Envoi OTP)
+        User->>FE: Fills form (Email, Phone, Password)
+        FE->>API: POST /api/auth/register
+        API->>DB: Verify uniqueness & create User (unverified)
+        API->>OTP: generateAndSend(user, 'REGISTER')
+        OTP->>DB: Insert 6-digit code (expires 10min)
+        OTP->>Mail: Send email with OTP code
+        Mail-->>User: Email received with OTP code
+        API-->>FE: HTTP 200 { status: 'OTP_SENT', preAuthToken }
+        FE-->>User: Show /register/verify-otp screen
+    end
+
+    %% ----------------------------------------------------
+    %% 2. OTP VERIFICATION FLOW (Green Rect)
+    %% ----------------------------------------------------
+    rect rgb(232, 245, 233)
+        note over User, Mail: 2. OTP Verification Flow (Validation & Session Token)
+        User->>FE: Enters OTP code
+        FE->>API: POST /api/auth/verify-otp
+        API->>OTP: verifyCode(code, purpose)
+        OTP->>DB: Validate match & expiration
+        OTP->>DB: Mark OTP as used
+        API->>DB: Set user.email_verified_at = now()
+        API->>API: Generate Sanctum Personal Access Token
+        API-->>FE: HTTP 200 { user, token }
+        FE->>FE: Stores token (localStorage / Cookie)
+        FE-->>User: Redirect to /dashboard
+    end
+
+    %% ----------------------------------------------------
+    %% 3. LOGIN FLOW (Amber Rect)
+    %% ----------------------------------------------------
+    rect rgb(255, 243, 224)
+        note over User, Mail: 3. Login Flow (2FA Challenge & Authentification)
+        User->>FE: POST /api/auth/login (email, password)
+        FE->>API: POST /api/auth/login
+        API->>DB: Hash::check(password)
+        API->>OTP: generateAndSend(user, 'LOGIN')
+        OTP->>DB: Insert 6-digit code (expires 10min)
+        OTP->>Mail: Send login code
+        Mail-->>User: Email received with login code
+        API-->>FE: HTTP 200 { status: '2FA_CHALLENGE', preAuthToken }
+        FE-->>User: Show /login/verify-otp screen
+    end

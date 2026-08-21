@@ -1,0 +1,179 @@
+@startuml BTS_Bank_Full_Architecture
+!theme plain
+skinparam roundcorner 10
+skinparam shadowing true
+skinparam defaultFontName "Segoe UI", "Helvetica", "Arial"
+skinparam defaultFontSize 12
+skinparam defaultTextAlignment center
+skinparam packageTitleAlignment left
+skinparam packagePadding 12
+skinparam componentPadding 8
+skinparam linetype ortho
+
+' ==========================================
+' COLOR PALETTE DEFINITIONS
+' ==========================================
+!define USER_BG #E1F5FE
+!define USER_BORDER #0288D1
+!define FE_BG #E8F5E9
+!define FE_BORDER #2E7D32
+!define API_BG #FFF8E1
+!define API_BORDER #F57F17
+!define CORE_BG #EDE7F6
+!define CORE_BORDER #512DA8
+!define DATA_BG #ECEFF1
+!define DATA_BORDER #37474F
+!define EXT_BG #FCE4EC
+!define EXT_BORDER #C2185B
+!define WS_BG #E0F2F1
+!define WS_BORDER #00695C
+
+title <b>BTS BANK — CREDIT APPLICATION PLATFORM</b>\nSystem Architecture & Data Flow Diagram
+
+' ==========================================
+' 1. ACTORS / USERS
+' ==========================================
+package "Users & Portals Access" as USERS #USER_BG {
+    actor "👤 Client / Borrower\n(Demandeur)" as ACT_CLIENT
+    actor "👔 Agency Staff\n(Agent Bancaire)" as ACT_STAFF
+    actor "🏛️ Bank Admin\n(Direction Centrale)" as ACT_ADMIN
+}
+
+' ==========================================
+' 2. FRONTEND TIER (NEXT.JS 14)
+' ==========================================
+package "Frontend Tier — Next.js 14 / React / TypeScript / TailwindCSS" as FRONTEND #FE_BG {
+    rectangle "Client App (Port 3000)\n• /register & /login (Email OTP)\n• 4-Step Credit Request Wizard\n• Document Upload & Gemini Live Check\n• Appointment Tracker\n• Real-Time Dossier Chat" as FE_CLIENT #USER_BG
+    
+    rectangle "Staff App (Port 3001)\n• /login (Staff Credentials)\n• Credit Dossier Review Dashboard\n• Step 1 Approval / Rejection\n• Real-Time Support/Report Chat\n• Scoped Audit Logs" as FE_STAFF #USER_BG
+    
+    rectangle "Admin App (Port 3002)\n• /login (Admin Entrance)\n• Executive Dashboard & Global KPIs\n• Step 2 Final Approval & Scheduling\n• Full Audit & Traffic Activity View" as FE_ADMIN #USER_BG
+
+    rectangle "Frontend Client Shared Services\n• Axios REST Client (Sanctum Tokens)\n• Laravel Echo (Pusher Protocol via Reverb)\n• Leaflet Map & Photon Geocoding" as FE_SERVICES #FFFFFF
+}
+
+' ==========================================
+' 3. API GATEWAY & HTTP LAYER (LARAVEL 11)
+' ==========================================
+package "API Gateway & Security Layer (Laravel 11 REST API - Port 8000)" as GATEWAY #API_BG {
+    rectangle "HTTP Middleware & Security Pipeline\n• CORS & CSRF Protection\n• Rate Limiting (throttle:6-30 req/min)\n• Sanctum Bearer Token Authenticator\n• Role Authorization (staff, staff.role:admin)" as MW_LAYER #FFFFFF
+    
+    rectangle "API Route Handlers (routes/api.php)\n• /api/auth/* (Register, Login, OTP, Google OAuth)\n• /api/applications/* (Steps 1-4, AI Verify, Submit, Appointments)\n• /api/staff/* (Review, Reports, Dashboard, Activity, Final Approval)" as ROUTES_LAYER #FFFFFF
+}
+
+' ==========================================
+' 4. BACKEND DOMAINS & SERVICES
+' ==========================================
+package "Backend Application Core (Domains & Services)" as BACKEND_CORE #CORE_BG {
+    
+    package "🔐 Auth & Identity Domain" as DOMAIN_AUTH #FFFFFF {
+        component "RegisterController\nLoginController\nGoogleAuthController" as CTRL_AUTH
+        component "OtpService\nPreAuthTokenService" as SVC_OTP
+        component "Sms Drivers\n(EmailOtpDriver, VonageSmsDriver, LogSmsDriver)" as DRV_SMS
+    }
+
+    package "📄 Credit Application Domain (4 Steps)" as DOMAIN_CREDIT #FFFFFF {
+        component "CreditApplicationController\nClientController / ProjectController\nCreditRequestController / DocumentController" as CTRL_CREDIT
+        component "CreditApplicationService\nApplicationNumberService" as SVC_CREDIT_APP
+        component "CreditApplicationValidationService\n(Step 1 & Step 2 Validation)" as SVC_VALIDATION
+        component "DocumentVerificationService\nPromptBuilder (AI Vision OCR)" as SVC_DOC_AI
+        component "BranchMatchingService\nAppointmentSchedulingService" as SVC_APPT
+    }
+
+    package "🏢 Staff, Review & Analytics Domain" as DOMAIN_STAFF #FFFFFF {
+        component "StaffApplicationController\nCreditApplicationReviewService\n(Staff Approve/Reject -> Admin Final Approve)" as CTRL_STAFF
+        component "StaffDashboardController\nDashboardStatsService (KPIs & Metrics)" as SVC_DASHBOARD
+        component "StaffActivityController\nActivityLogService & AuditLogService" as SVC_AUDIT
+        component "StaffReportController\nReportMessageBroadcastService" as SVC_REPORT
+    }
+}
+
+' ==========================================
+' 5. REAL-TIME ENGINE
+' ==========================================
+package "Real-Time WebSocket Layer" as REALTIME #WS_BG {
+    component "Laravel Reverb Server\n(Port 8080 - WebSocket Server)\nEvent Broadcasting (ReportMessageSent)" as WS_REVERB #FFFFFF
+}
+
+' ==========================================
+' 6. DATA PERSISTENCE & STORAGE
+' ==========================================
+package "Data Persistence & Storage Tier" as DATA_TIER #DATA_BG {
+    database "MySQL 8.x Database\n(Database: bts_php_backend)" as DB_MYSQL #FFFFFF {
+        folder "Relational Tables" {
+            [users / staff_users]
+            [otp_codes]
+            [clients / projects / credit_requests]
+            [credit_applications / application_number_counters]
+            [documents / validation_steps]
+            [branches / appointments]
+            [report_messages / audit_logs]
+        }
+    }
+
+    storage "Local Document Storage\n(storage/app/documents)\n• CIN Cards, Invoices, Proofs, Business Plans" as STORAGE_DOCS #FFFFFF
+}
+
+' ==========================================
+' 7. EXTERNAL INTEGRATIONS & APIS
+' ==========================================
+package "External Services & Third-Party APIs" as EXTERNAL #EXT_BG {
+    cloud "Google Gemini 1.5 API\n(Document Authenticity & OCR Field Extraction)" as EXT_GEMINI #FFFFFF
+    cloud "Resend Email API\n(Email OTP Delivery & Notifications)" as EXT_RESEND #FFFFFF
+    cloud "Vonage SMS API\n(SMS OTP Delivery)" as EXT_VONAGE #FFFFFF
+    cloud "Google OAuth 2.0\n(Identity Token Verification)" as EXT_GOOGLE #FFFFFF
+    cloud "Photon / OpenStreetMap\n(Geocoding & Branch Location)" as EXT_OSM #FFFFFF
+}
+
+' ==========================================
+' 8. FLOWS & CONNECTIONS
+' ==========================================
+ACT_CLIENT --> FE_CLIENT : "Accesses (port 3000)"
+ACT_STAFF --> FE_STAFF : "Accesses (port 3001)"
+ACT_ADMIN --> FE_ADMIN : "Accesses (port 3002)"
+
+FE_CLIENT ..> FE_SERVICES
+FE_STAFF ..> FE_SERVICES
+FE_ADMIN ..> FE_SERVICES
+
+FE_SERVICES --> EXT_OSM : "Address Search (Step 2)"
+FE_SERVICES --> MW_LAYER : "HTTPS REST Requests"
+FE_SERVICES <--> WS_REVERB : "Echo WebSockets (Report Chat)"
+
+MW_LAYER --> ROUTES_LAYER : "Throttled & Authenticated"
+ROUTES_LAYER --> CTRL_AUTH : "/api/auth/*"
+ROUTES_LAYER --> CTRL_CREDIT : "/api/applications/*"
+ROUTES_LAYER --> CTRL_STAFF : "/api/staff/*"
+
+' Auth Domain Flows
+CTRL_AUTH --> SVC_OTP : "Manage OTP"
+SVC_OTP --> DRV_SMS : "Dispatch Code"
+DRV_SMS --> EXT_RESEND : "Email OTP"
+DRV_SMS --> EXT_VONAGE : "SMS OTP"
+CTRL_AUTH --> EXT_GOOGLE : "Verify ID Token"
+
+' Credit Application Flows
+CTRL_CREDIT --> SVC_CREDIT_APP : "Execute Step Workflow"
+SVC_CREDIT_APP --> SVC_VALIDATION : "Validate Rules"
+SVC_VALIDATION --> SVC_DOC_AI : "Inspect Uploaded Files"
+SVC_DOC_AI --> EXT_GEMINI : "Prompt + Document OCR"
+CTRL_CREDIT --> STORAGE_DOCS : "Save Document Files"
+SVC_DOC_AI --> STORAGE_DOCS : "Read Files for AI"
+
+' Staff & Review Flows
+CTRL_STAFF --> SVC_DASHBOARD : "Fetch KPIs & Stats"
+CTRL_STAFF --> SVC_AUDIT : "Log Operations & Traffic"
+CTRL_STAFF --> SVC_REPORT : "Send Chat Message"
+SVC_REPORT --> WS_REVERB : "Broadcast Event"
+CTRL_STAFF --> SVC_APPT : "On Admin Approval: Propose Branch Appointment"
+
+' Database Eloquent Persistence
+CTRL_AUTH --> DB_MYSQL : "Eloquent ORM"
+SVC_CREDIT_APP --> DB_MYSQL : "Eloquent ORM"
+SVC_VALIDATION --> DB_MYSQL : "Eloquent ORM"
+SVC_APPT --> DB_MYSQL : "Eloquent ORM"
+SVC_DASHBOARD --> DB_MYSQL : "Eloquent ORM"
+SVC_AUDIT --> DB_MYSQL : "Eloquent ORM"
+CTRL_STAFF --> DB_MYSQL : "Eloquent ORM"
+
+@enduml

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Branch;
 use App\Models\StaffUser;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -30,5 +31,14 @@ class StaffUserFactory extends Factory
     public function admin(): static
     {
         return $this->state(fn (array $attributes) => ['role' => 'admin']);
+    }
+
+    /**
+     * Assign this staff member to a specific branch, making them branch-restricted
+     * (unless the role is a superuser like admin/super_admin).
+     */
+    public function forBranch(Branch $branch): static
+    {
+        return $this->state(fn (array $attributes) => ['branch_id' => $branch->id]);
     }
 }

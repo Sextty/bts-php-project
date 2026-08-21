@@ -117,9 +117,15 @@ class ActivityLogService
         return $query->pluck('action')->all();
     }
 
-    /** Non-admins never see authentication/OTP rows at all. */
+    /** Non-admins never see authentication/OTP rows at all. Branch-assigned staff additionally
+     * see nothing but logs about their own branch's applications — an audit trail is scoped the
+     * same way the files it traces are. */
     private function applyVisibility($query, StaffUser $viewer): void
     {
+        if ($viewer->isBranchRestricted()) {
+            $query->whereHas('creditApplication', fn ($q) => $q->where('branch_id', $viewer->branch_id));
+        }
+
         if ($viewer->isAdmin()) {
             return;
         }

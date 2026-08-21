@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Responses\ApiResponse;
 use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,6 @@ class LogoutController extends Controller
 
         $this->auditLog->log('auth.logout', $user, ipAddress: $request->ip(), userAgent: $request->userAgent());
 
-        return response()->json(['success' => true, 'data' => null]);
+        return ApiResponse::noContent();
     }
 }

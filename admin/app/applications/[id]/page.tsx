@@ -1,0 +1,117 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+import { ApplicationReviewDetail } from '@/components/application-review-detail';
+import { ErrorAlert } from '@/components/error-alert';
+import {
+  getStaffApplication,
+  adminApproveApplication,
+  adminRejectApplication,
+  cancelAdminApplication,
+  type StaffApplicationDto,
+} from '@/lib/api/staff';
+import { ApiError } from '@/lib/api/client';
+import { getStaffToken } from '@/lib/auth/staff-token';
+import { PageLoading } from '@/components/page-loading';
+
+export default function AdminApplicationDetailPage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const applicationId = Number(params.id);
+
+  const [application, setApplication] = useState<StaffApplicationDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getStaffToken()) {
+      router.replace('/login');
+      return;
+    }
+    if (!Number.isFinite(applicationId)) {
+      router.replace('/applications');
+      return;
+    }
+    getStaffApplication(applicationId)
+      .then(({ application }) => setApplication(application))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Erreur de chargement.'))
+      .finally(() => setLoading(false));
+  }, [applicationId, router]);
+
+  async function handleApprove() {
+    setError(null);
+    setWorking(true);
+    try {
+      const { application } = await adminApproveApplication(applicationId);
+      setApplication(application);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'approbation.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleReject(reason: string) {
+    setError(null);
+    setWorking(true);
+    try {
+      const { application } = await adminRejectApplication(applicationId, reason);
+      setApplication(application);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Erreur lors du rejet.');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleCancel() {
+    setError(null);
+    setWorking(true);
+    try {
+      const { application } = await cancelAdminApplication(applicationId);
+      setApplication(application);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Erreur lors de l'annulation.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  if (loading) {
+    return <PageLoading />;
+  }
+
+  if (!application) {
+    return (
+      <div className="px-4 sm:px-8 py-8 max-w-6xl mx-auto">
+        <Link href="/applications" className="mb-6 inline-flex items-center gap-1.5 text-sm text-[#3D5166] hover:text-[#C0272D] transition-colors">
+          <ArrowLeft className="size-4" />
+          Retour aux dossiers
+        </Link>
+        <ErrorAlert message={error} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 sm:px-8 py-8 max-w-6xl mx-auto">
+      <Link href="/applications" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-[#3D5166] hover:text-[#C0272D] transition-colors">
+        <ArrowLeft className="size-4" />
+        Retour aux dossiers
+      </Link>
+      <ApplicationReviewDetail
+        application={application}
+        canDecide={application.status === 'STAFF_APPROVED'}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onCancel={application.status === 'STAFF_APPROVED' ? handleCancel : undefined}
+        working={working}
+        error={error}
+      />
+    </div>
+  );
+}

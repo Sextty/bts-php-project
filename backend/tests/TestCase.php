@@ -11,7 +11,7 @@ abstract class TestCase extends BaseTestCase
     {
         parent::setUp();
 
-        // No test may reach the real network. Validation-1 calls OpenRouter for the advisory AI
+        // No test may reach the real network. Validation-1 calls Gemini for the advisory AI
         // document check, so every test that runs it (ValidationFlowTest, StaffReviewTest,
         // AppointmentSchedulingTest, ReportChatTest) was silently issuing live API calls —
         // burning the account's free-tier quota, and making the suite slow and dependent on a

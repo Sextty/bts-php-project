@@ -7,6 +7,7 @@ class CreditRequestStepTest extends CreditApplicationTestCase
     public function test_saving_a_credit_request_generates_a_number_automatically(): void
     {
         $application = $this->newApplication();
+        $this->completeStep1($application);
 
         $response = $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload());
 
@@ -19,6 +20,7 @@ class CreditRequestStepTest extends CreditApplicationTestCase
     public function test_client_cannot_supply_their_own_n_demande(): void
     {
         $application = $this->newApplication();
+        $this->completeStep1($application);
 
         $payload = array_merge($this->validCreditRequestPayload(), ['n_demande' => 'CR-2000-000001']);
         $this->putJson("/api/applications/{$application->id}/credit", $payload);
@@ -29,6 +31,7 @@ class CreditRequestStepTest extends CreditApplicationTestCase
     public function test_editing_the_credit_request_again_keeps_the_same_number(): void
     {
         $application = $this->newApplication();
+        $this->completeStep1($application);
 
         $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload());
         $first = $application->fresh()->creditRequest->n_demande;
@@ -39,9 +42,35 @@ class CreditRequestStepTest extends CreditApplicationTestCase
         $this->assertSame($first, $second);
     }
 
+    public function test_identifiant_personne_is_auto_populated_from_code_client(): void
+    {
+        $application = $this->newApplication();
+        $this->completeStep1($application);
+
+        $codeClient = $application->fresh()->client->code_client;
+
+        $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload())->assertOk();
+
+        $this->assertSame($codeClient, $application->fresh()->creditRequest->identifiant_personne);
+    }
+
+    public function test_client_cannot_override_identifiant_personne(): void
+    {
+        $application = $this->newApplication();
+        $this->completeStep1($application);
+
+        $codeClient = $application->fresh()->client->code_client;
+
+        $payload = array_merge($this->validCreditRequestPayload(), ['identifiant_personne' => 'OTHER_PERSON']);
+        $this->putJson("/api/applications/{$application->id}/credit", $payload)->assertOk();
+
+        $this->assertSame($codeClient, $application->fresh()->creditRequest->identifiant_personne);
+    }
+
     public function test_missing_required_fields_are_rejected(): void
     {
         $application = $this->newApplication();
+        $this->completeStep1($application);
 
         $payload = $this->validCreditRequestPayload();
         unset($payload['montant_global_sollicite']);

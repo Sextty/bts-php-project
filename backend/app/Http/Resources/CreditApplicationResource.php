@@ -32,6 +32,28 @@ class CreditApplicationResource extends JsonResource
                 'errors' => $step->errors,
                 'created_at' => $step->created_at,
             ])),
+            'branch' => $this->whenLoaded('branch', fn () => [
+                'id' => $this->branch->id,
+                'name' => $this->branch->name,
+                'ville' => $this->branch->ville,
+                'governorate' => $this->branch->ville,
+                'address' => $this->branch->address,
+                'google_maps_url' => $this->branch->googleMapsUrl(),
+            ]),
+            'latest_appointment' => $this->whenLoaded('appointments', function () {
+                $latest = $this->relationLoaded('appointments')
+                    ? $this->appointments->sortByDesc('attempt_number')->first()
+                    : $this->latestAppointment();
+
+                $latest?->loadMissing('branch');
+
+                return $latest ? new AppointmentResource($latest) : null;
+            }),
+            'appointments' => AppointmentResource::collection($this->whenLoaded('appointments')),
+            'report_messages_count' => $this->report_messages_count ?? $this->reportMessages()->count(),
+            'is_report_closed' => $this->isReportClosed(),
+            'report_closed_at' => $this->report_closed_at,
+            'report_closed_reason' => $this->report_closed_reason,
         ];
     }
 }

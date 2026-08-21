@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Contracts\SmsProviderInterface;
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Models\OtpCode;
 use App\Models\User;
+use App\ValueObjects\OtpMessage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -85,7 +87,11 @@ class OtpService
             ]);
         });
 
-        $message = "Your BTS Bank verification code is {$code}. It expires in {$ttlMinutes} minutes.";
+        $message = new OtpMessage(
+            code: $code,
+            ttlMinutes: $ttlMinutes,
+            body: "Your BTS Bank verification code is {$code}. It expires in {$ttlMinutes} minutes.",
+        );
         $result = $this->smsProvider->send($user, $message);
 
         $this->auditLog->log(
@@ -97,11 +103,7 @@ class OtpService
         );
 
         if (! $result->ok) {
-            throw new ApiException(
-                'OTP_DISPATCH_FAILED',
-                'Could not send the verification code. Please try again.',
-                status: 503,
-            );
+            throw new ApiException(ApiErrorCode::OtpDispatchFailed);
         }
 
         return $code;
@@ -122,18 +124,18 @@ class OtpService
 
         if (! $otp) {
             $this->auditLog->log('otp.failed', $user, newState: ['purpose' => $purpose, 'reason' => 'no_active_code'], ipAddress: $ip, userAgent: $userAgent);
-            throw new ApiException('OTP_INVALID', 'Invalid or expired verification code.');
+            throw new ApiException(ApiErrorCode::OtpInvalid);
         }
 
         $maxAttempts = (int) config('services.otp.max_attempts');
         if ($otp->attempt_count >= $maxAttempts) {
             $this->auditLog->log('otp.exhausted', $user, newState: ['purpose' => $purpose], ipAddress: $ip, userAgent: $userAgent);
-            throw new ApiException('MAX_ATTEMPTS_EXCEEDED', 'Too many incorrect attempts. Request a new code.', status: 429);
+            throw new ApiException(ApiErrorCode::MaxAttemptsExceeded);
         }
 
         if ($otp->isExpired()) {
             $this->auditLog->log('otp.failed', $user, newState: ['purpose' => $purpose, 'reason' => 'expired'], ipAddress: $ip, userAgent: $userAgent);
-            throw new ApiException('OTP_EXPIRED', 'This verification code has expired.', status: 410);
+            throw new ApiException(ApiErrorCode::OtpExpired);
         }
 
         if (! Hash::check($code, $otp->code_hash)) {
@@ -143,10 +145,10 @@ class OtpService
             if ($otp->attempt_count >= $maxAttempts) {
                 $otp->update(['consumed_at' => now()]);
                 $this->auditLog->log('otp.exhausted', $user, newState: ['purpose' => $purpose], ipAddress: $ip, userAgent: $userAgent);
-                throw new ApiException('MAX_ATTEMPTS_EXCEEDED', 'Too many incorrect attempts. Request a new code.', status: 429);
+                throw new ApiException(ApiErrorCode::MaxAttemptsExceeded);
             }
             $this->auditLog->log('otp.failed', $user, newState: ['purpose' => $purpose, 'reason' => 'wrong_code'], ipAddress: $ip, userAgent: $userAgent);
-            throw new ApiException('OTP_INVALID', 'Invalid or expired verification code.');
+            throw new ApiException(ApiErrorCode::OtpInvalid);
         }
 
         // Conditional UPDATE, not read-then-write: two concurrent submissions of the same valid
@@ -158,7 +160,7 @@ class OtpService
 
         if ($consumed === 0) {
             // Lost the race to another request verifying the same code concurrently.
-            throw new ApiException('OTP_INVALID', 'Invalid or expired verification code.');
+            throw new ApiException(ApiErrorCode::OtpInvalid);
         }
 
         $this->auditLog->log('otp.verified', $user, newState: ['purpose' => $purpose], ipAddress: $ip, userAgent: $userAgent);

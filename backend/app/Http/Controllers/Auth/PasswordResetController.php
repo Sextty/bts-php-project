@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
+use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use App\Services\AuditLogService;
 use Illuminate\Auth\Events\PasswordReset;
@@ -37,10 +39,7 @@ class PasswordResetController extends Controller
             userAgent: $request->userAgent(),
         );
 
-        return response()->json([
-            'success' => true,
-            'data' => ['message' => 'If an account exists for that email, a reset link has been sent.'],
-        ]);
+        return ApiResponse::ok(['message' => 'If an account exists for that email, a reset link has been sent.']);
     }
 
     public function reset(ResetPasswordRequest $request): JsonResponse
@@ -63,9 +62,9 @@ class PasswordResetController extends Controller
         );
 
         if ($status !== Password::PASSWORD_RESET) {
-            throw new ApiException('INVALID_RESET_TOKEN', 'This reset link is invalid or has expired.', status: 400);
+            throw new ApiException(ApiErrorCode::InvalidResetToken);
         }
 
-        return response()->json(['success' => true, 'data' => ['message' => 'Password has been reset.']]);
+        return ApiResponse::ok(['message' => 'Password has been reset.']);
     }
 }

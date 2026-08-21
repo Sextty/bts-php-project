@@ -22,6 +22,8 @@ class Project extends Model
         'description',
         'delegation',
         'localisation',
+        'latitude',
+        'longitude',
         'cout',
         'investissement_personnel',
         'financement',
@@ -32,6 +34,8 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'latitude' => 'float',
+            'longitude' => 'float',
             'cout' => 'decimal:3',
             'investissement_personnel' => 'decimal:3',
             'financement' => 'decimal:3',

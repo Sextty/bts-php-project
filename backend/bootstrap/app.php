@@ -1,9 +1,13 @@
 <?php
 
 use App\Exceptions\ApiException;
+use App\Http\Middleware\EnsureCustomerUser;
+use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureStaffRole;
 use App\Http\Middleware\EnsureStaffUser;
+use App\Http\Middleware\RequestIdMiddleware;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -11,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -39,14 +44,25 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'staff' => EnsureStaffUser::class,
             'staff.role' => EnsureStaffRole::class,
+            'customer' => EnsureCustomerUser::class,
+            'permission' => EnsurePermission::class,
+        ]);
+
+        // Correlation ID for every /api request: X-Request-Id header in, X-Request-Id
+        // header + log context + error-envelope field out (see RequestIdMiddleware).
+        $middleware->api(prepend: [
+            RequestIdMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Business-flow outcomes (wrong password, expired OTP, ...) are expected, handled
         // results, not server faults — logging every one at ERROR level (Laravel's default for
         // any uncaught exception) would drown real faults in noise. Only report status>=500.
-        $exceptions->dontReportWhen(function (\Throwable $e) {
-            return $e instanceof ApiException && $e->status < 500;
+        // A unique-violation QueryException (duplicate email/phone/... ) is likewise an expected
+        // client error, rendered below as 422 — not a server fault worth an ERROR log.
+        $exceptions->dontReportWhen(function (Throwable $e) {
+            return ($e instanceof ApiException && $e->status < 500)
+                || ($e instanceof QueryException && ($e->errorInfo[0] ?? null) === '23000');
         });
 
         // One consistent envelope for every API error: {success:false, error:{code,message}}.
@@ -59,7 +75,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->json([
                 'success' => false,
-                'error' => ['code' => $e->errorCode, 'message' => $e->getMessage()],
+                'error' => ['code' => $e->errorCode, 'message' => $e->getMessage(), 'request_id' => $request->attributes->get('request_id')],
             ], $e->status);
         });
 
@@ -70,7 +86,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->json([
                 'success' => false,
-                'error' => ['code' => 'UNAUTHENTICATED', 'message' => 'Authentication required.'],
+                'error' => ['code' => 'UNAUTHENTICATED', 'message' => 'Authentication required.', 'request_id' => $request->attributes->get('request_id')],
             ], 401);
         });
 
@@ -87,7 +103,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->json([
                 'success' => false,
-                'error' => ['code' => 'FORBIDDEN', 'message' => 'You do not have access to this resource.'],
+                'error' => ['code' => 'FORBIDDEN', 'message' => 'You do not have access to this resource.', 'request_id' => $request->attributes->get('request_id')],
             ], 403);
         });
 
@@ -102,6 +118,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     'code' => 'VALIDATION_ERROR',
                     'message' => $e->getMessage(),
                     'fields' => $e->errors(),
+                    'request_id' => $request->attributes->get('request_id'),
                 ],
             ], 422);
         });
@@ -113,7 +130,35 @@ return Application::configure(basePath: dirname(__DIR__))
 
             return response()->json([
                 'success' => false,
-                'error' => ['code' => 'NOT_FOUND', 'message' => 'Resource not found.'],
+                'error' => ['code' => 'NOT_FOUND', 'message' => 'Resource not found.', 'request_id' => $request->attributes->get('request_id')],
             ], 404);
+        });
+
+        // Route-level throttling (the auth routes' ->middleware('throttle:...')) — Laravel's
+        // default body is an HTML quote page, which is useless to an API client; give it the
+        // same envelope as every other error, with the same RATE_LIMITED code the OTP cooldown
+        // already uses.
+        $exceptions->render(function (TooManyRequestsHttpException $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => ['code' => 'RATE_LIMITED', 'message' => 'Too many requests. Please try again later.', 'request_id' => $request->attributes->get('request_id')],
+            ], 429);
+        });
+
+        // A unique-constraint violation (SQLSTATE 23000 — duplicate email/phone/... ) surfaced
+        // to the client as a clean 422 instead of the default 500 the API used to return for it.
+        $exceptions->render(function (QueryException $e, Request $request) {
+            if (! $request->is('api/*') || ($e->errorInfo[0] ?? null) !== '23000') {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => ['code' => 'DUPLICATE_ENTRY', 'message' => 'A record with this value already exists.', 'request_id' => $request->attributes->get('request_id')],
+            ], 422);
         });
     })->create();

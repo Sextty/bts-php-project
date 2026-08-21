@@ -58,11 +58,8 @@ abstract class CreditApplicationTestCase extends TestCase
     protected function validCreditRequestPayload(): array
     {
         return [
-            'identifiant_personne' => 'CL-0001',
             'nom_ou_rs' => 'Ben Salah',
             'prenom_ou_dc' => 'Karim',
-            'type_pid' => 'CIN',
-            'numero_pid' => '12345678',
             'origine' => 'agence',
             'date_depot' => '2026-01-05',
             'date_reception' => '2026-01-06',
@@ -77,8 +74,6 @@ abstract class CreditApplicationTestCase extends TestCase
     protected function validProjectPayload(): array
     {
         return [
-            'code_projet' => 'PR-0001',
-            'identifiant_personne' => 'CL-0001',
             'nom_ou_rs' => 'Ben Salah',
             'prenom_ou_dc' => 'Karim',
             'type_projet' => 'extension',
@@ -96,5 +91,10 @@ abstract class CreditApplicationTestCase extends TestCase
             'revenus' => 3000,
             'depenses' => 1500,
         ];
+    }
+
+    protected function completeStep1(CreditApplication $application): void
+    {
+        $this->putJson("/api/applications/{$application->id}/client", $this->validClientPayload())->assertOk();
     }
 }

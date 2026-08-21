@@ -5,9 +5,10 @@ namespace App\Http\Requests\CreditApplication;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Étape 2 — Demande de Crédit. n_demande is deliberately NOT a validated input field here —
- * it's server-generated (ApplicationNumberService) and any client-supplied value is ignored by
- * CreditApplicationService::saveCreditRequest, never trusted.
+ * Étape 2 — Demande de Crédit. n_demande and identifiant_personne are deliberately NOT
+ * validated input fields here — n_demande is server-generated (ApplicationNumberService) and
+ * identifiant_personne is derived from the client's code_client. Any client-supplied values
+ * for these fields are ignored by CreditApplicationService::saveCreditRequest.
  */
 class UpdateCreditRequestRequest extends FormRequest
 {
@@ -19,11 +20,9 @@ class UpdateCreditRequestRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'identifiant_personne' => ['required', 'string', 'max:50'],
+            'identifiant_personne' => ['nullable', 'string', 'max:50'],
             'nom_ou_rs' => ['required', 'string', 'max:150'],
             'prenom_ou_dc' => ['required', 'string', 'max:150'],
-            'type_pid' => ['required', 'string', 'in:CIN,Passeport,Carte de séjour'],
-            'numero_pid' => ['required', 'string', 'max:50'],
             'origine' => ['required', 'string', 'max:100'],
             'date_depot' => ['required', 'date', 'before_or_equal:today'],
             'date_reception' => ['required', 'date', 'after_or_equal:date_depot'],

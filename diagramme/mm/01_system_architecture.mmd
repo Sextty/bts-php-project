@@ -1,0 +1,149 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E8F5E9',
+    'primaryTextColor': '#1B5E20',
+    'primaryBorderColor': '#2E7D32',
+    'lineColor': '#455A64',
+    'secondaryColor': '#EDE7F6',
+    'tertiaryColor': '#FFF3E0',
+    'fontFamily': 'Segoe UI, Inter, Roboto, sans-serif',
+    'fontSize': '12px'
+  }
+}}%%
+
+flowchart TB
+    %% ---------------------------------------------------------
+    %% BTS BANK - SYSTEM ARCHITECTURE DIAGRAM
+    %% ---------------------------------------------------------
+
+    subgraph USERS["USER ROLES & CLIENT ACCESS"]
+        direction LR
+        U_CLIENT["Client / Borrower<br/><b>(Port 3000)</b>"]:::userNode
+        U_STAFF["Agency Staff<br/><b>(Port 3001)</b>"]:::userNode
+        U_ADMIN["Central Admin<br/><b>(Port 3002)</b>"]:::userNode
+    end
+
+    subgraph FRONTEND_TIER["FRONTEND TIER (Next.js 16 + React 19 + TailwindCSS)"]
+        FE_C["<b>Client Portal</b><br/>• Self-registration & OTP<br/>• 4-Step Credit Wizard<br/>• Doc Upload & Google Gemini AI Check<br/>• Appointment Tracker<br/>• Live Dossier Chat"]:::frontendNode
+        FE_S["<b>Staff Portal</b><br/>• Dossier Review Dashboard<br/>• L1 Staff Approval / Reject<br/>• Real-time Support Chat<br/>• Agency Scoped Audit"]:::frontendNode
+        FE_A["<b>Admin Portal</b><br/>• Executive KPIs & Analytics<br/>• L2 Final Approval / Reject<br/>• Automated RDV Trigger<br/>• Global System Governance"]:::frontendNode
+    end
+
+    subgraph API_GATEWAY["API SECURITY & GATEWAY (Laravel 11 - Port 8000)"]
+        direction TB
+        CORS["CORS & CSRF Middleware"]:::gatewayNode
+        RATE["Rate Limiter (Throttle: 6-30 req/min)"]:::gatewayNode
+        AUTH_SANCTUM["Laravel Sanctum (Bearer Token Auth)"]:::gatewayNode
+        ROLE_GUARD["Role Middleware (staff / staff.role:admin)"]:::gatewayNode
+    end
+
+    subgraph BACKEND_DOMAINS["BACKEND APPLICATION CORE (Laravel 11)"]
+        subgraph DOMAIN_AUTH["Auth Domain"]
+            AUTH_CTRL["<b>AuthController / GoogleAuthController</b><br/>OTP Auth & Google OAuth"]:::backendNode
+            OTP_SVC["<b>OtpService & PreAuthTokenService</b><br/>OTP Token Lifecycle"]:::backendNode
+            SMS_DRV["<b>Sms/Email Drivers</b><br/>Gmail SMTP / Vonage / Log"]:::backendNode
+        end
+
+        subgraph DOMAIN_CREDIT["Credit Application Domain"]
+            APP_CTRL["<b>CreditApplicationController</b><br/>4-Step Submission & State Flow"]:::backendNode
+            APP_SVC["<b>CreditApplicationService</b><br/>Business Logic & Workflow"]:::backendNode
+            VAL_SVC["<b>CreditApplicationValidationService</b><br/>Eligibility & Formula Calculation"]:::backendNode
+            AI_SVC["<b>DocumentVerificationService</b><br/>Google Gemini AI OCR & Validation"]:::backendNode
+            APPT_SVC["<b>BranchMatching & AppointmentSchedulingService</b><br/>Branch Slot Allocation"]:::backendNode
+        end
+
+        subgraph DOMAIN_STAFF["Staff & Governance Domain"]
+            STAFF_CTRL["<b>StaffApplicationController</b><br/>Review & Decisions"]:::backendNode
+            REVIEW_SVC["<b>CreditApplicationReviewService</b><br/>L1/L2 Approval Workflow Engine"]:::backendNode
+            DASH_SVC["<b>DashboardStatsService</b><br/>Executive KPIs & Stats"]:::backendNode
+            AUDIT_SVC["<b>ActivityLogService & AuditLogService</b><br/>Compliance & Security Logs"]:::backendNode
+        end
+    end
+
+    subgraph REALTIME_TIER["REAL-TIME WEBSOCKET LAYER"]
+        REVERB["<b>Laravel Reverb WebSocket Server</b><br/>(Port 6001 / 8080)<br/>• Event: ReportMessageSent<br/>• Live Dossier Chat Channel"]:::realtimeNode
+    end
+
+    subgraph DATA_TIER["DATA PERSISTENCE & STORAGE"]
+        DB[("<b>MySQL 8.x Database</b><br/>'bts_php_backend'<br/>InnoDB • ACID Transactions")]:::dataNode
+        STORAGE["<b>Local Document Storage</b><br/>'storage/app/documents'<br/>Secure Document Vault"]:::dataNode
+    end
+
+    subgraph EXTERNAL_SERVICES["EXTERNAL THIRD-PARTY SERVICES"]
+        EXT_GEMINI["<b>Google Gemini 1.5 API</b><br/>(Document OCR & Verification)"]:::externalNode
+        EXT_OSM["<b>Photon / OpenStreetMap</b><br/>(Geocoding & Branch Mapping)"]:::externalNode
+        EXT_EMAIL["<b>Gmail SMTP / Resend</b><br/>(OTP & Email Notifications)"]:::externalNode
+        EXT_GOOGLE["<b>Google Identity OAuth 2.0</b><br/>(Single Sign-On Authentication)"]:::externalNode
+    end
+
+    %% User to Frontend Flows
+    U_CLIENT ==> FE_C
+    U_STAFF ==> FE_S
+    U_ADMIN ==> FE_A
+
+    %% Frontend to API Gateway Flows
+    FE_C ==> CORS
+    FE_S ==> CORS
+    FE_A ==> CORS
+
+    %% API Gateway Pipeline
+    CORS ==> RATE ==> AUTH_SANCTUM ==> ROLE_GUARD
+
+    %% Gateway to Controllers
+    ROLE_GUARD ==> AUTH_CTRL
+    ROLE_GUARD ==> APP_CTRL
+    ROLE_GUARD ==> STAFF_CTRL
+
+    %% Auth Domain Flows
+    AUTH_CTRL -.-> OTP_SVC
+    OTP_SVC -.-> SMS_DRV
+    SMS_DRV -.-> EXT_EMAIL
+    AUTH_CTRL -.-> EXT_GOOGLE
+
+    %% Credit Domain Flows
+    APP_CTRL ==> APP_SVC
+    APP_SVC -.-> VAL_SVC
+    VAL_SVC -.-> AI_SVC
+    AI_SVC -.-> EXT_GEMINI
+    APP_CTRL -.-> STORAGE
+    FE_C -.-> EXT_OSM
+
+    %% Staff & Governance Flows
+    STAFF_CTRL ==> REVIEW_SVC
+    REVIEW_SVC -.-> APPT_SVC
+    STAFF_CTRL -.-> DASH_SVC
+    STAFF_CTRL -.-> AUDIT_SVC
+
+    %% Real-time WebSocket Flows
+    REVIEW_SVC -.-> REVERB
+    FE_C <===> REVERB
+    FE_S <===> REVERB
+
+    %% Database Persistence Flows
+    AUTH_CTRL ==> DB
+    APP_SVC ==> DB
+    REVIEW_SVC ==> DB
+    DASH_SVC -.-> DB
+    AUDIT_SVC -.-> DB
+
+    %% Subgraph Styling
+    style USERS fill:#EBF3FB,stroke:#1565C0,stroke-width:1.5px,stroke-dasharray: 4 4
+    style FRONTEND_TIER fill:#E8F5E9,stroke:#2E7D32,stroke-width:1.5px
+    style API_GATEWAY fill:#FFF8E1,stroke:#E65100,stroke-width:1.5px
+    style BACKEND_DOMAINS fill:#F3E5F5,stroke:#4527A0,stroke-width:1.5px
+    style DOMAIN_AUTH fill:#EDE7F6,stroke:#7E57C2,stroke-width:1px
+    style DOMAIN_CREDIT fill:#EDE7F6,stroke:#7E57C2,stroke-width:1px
+    style DOMAIN_STAFF fill:#EDE7F6,stroke:#7E57C2,stroke-width:1px
+    style REALTIME_TIER fill:#E0F7FA,stroke:#00695C,stroke-width:1.5px
+    style DATA_TIER fill:#ECEFF1,stroke:#37474F,stroke-width:1.5px
+    style EXTERNAL_SERVICES fill:#FCE4EC,stroke:#C62828,stroke-width:1.5px
+
+    %% Class Definitions
+    classDef userNode fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1;
+    classDef frontendNode fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+    classDef gatewayNode fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C;
+    classDef backendNode fill:#EDE7F6,stroke:#4527A0,stroke-width:2px,color:#311B92;
+    classDef realtimeNode fill:#E0F7FA,stroke:#00695C,stroke-width:2px,color:#004D40;
+    classDef dataNode fill:#ECEFF1,stroke:#37474F,stroke-width:2px,color:#263238;
+    classDef externalNode fill:#FCE4EC,stroke:#C62828,stroke-width:2px,color:#880E4F;

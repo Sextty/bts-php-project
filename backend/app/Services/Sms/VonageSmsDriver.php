@@ -4,6 +4,7 @@ namespace App\Services\Sms;
 
 use App\Contracts\SmsProviderInterface;
 use App\Models\User;
+use App\ValueObjects\OtpMessage;
 use Illuminate\Support\Facades\Log;
 use Vonage\Client;
 use Vonage\Client\Credentials\Basic;
@@ -28,7 +29,7 @@ class VonageSmsDriver implements SmsProviderInterface
         private readonly string $brandName,
     ) {}
 
-    public function send(User $user, string $message): SmsDeliveryResult
+    public function send(User $user, OtpMessage $message): SmsDeliveryResult
     {
         $client = new Client(new Basic($this->apiKey, $this->apiSecret));
 
@@ -36,7 +37,7 @@ class VonageSmsDriver implements SmsProviderInterface
         $recipient = ltrim((string) $user->phone, '+');
 
         try {
-            $response = $client->messages()->send(new SMSText($recipient, $this->brandName, $message));
+            $response = $client->messages()->send(new SMSText($recipient, $this->brandName, $message->body));
 
             Log::info('[sms:vonage] message accepted', ['to' => $recipient, 'response' => $response]);
 

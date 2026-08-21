@@ -2,10 +2,13 @@
 
 namespace App\Services;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Models\Appointment;
 use App\Models\Branch;
 use App\Models\CreditApplication;
+use App\Models\StaffUser;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -21,55 +24,99 @@ class AppointmentSchedulingService
     public function __construct(
         private readonly BranchMatchingService $branchMatching,
         private readonly AuditLogService $auditLog,
+        private readonly CreditApplicationStateMachine $stateMachine,
+        private readonly NotificationService $notifications,
     ) {}
 
-    public function proposeNext(CreditApplication $application, ?string $ip = null, ?string $userAgent = null): Appointment
+    /**
+     * The actor on the first proposal is the approving admin (APPROVED → APPOINTMENT_PROPOSED
+     * is an admin transition in the machine); on re-proposals it's the customer (the
+     * APPOINTMENT_PROPOSED → APPOINTMENT_PROPOSED loop).
+     */
+    public function proposeNext(CreditApplication $application, User|StaffUser $actor, ?string $ip = null, ?string $userAgent = null): Appointment
     {
         $previous = $application->latestAppointment();
         $attemptNumber = $previous ? $previous->attempt_number + 1 : 1;
 
         if ($attemptNumber > Appointment::MAX_ATTEMPTS) {
-            throw new ApiException('MAX_ATTEMPTS_EXCEEDED', 'No more appointment proposals are available.', status: 409);
+            throw new ApiException(ApiErrorCode::MaxAttemptsExceeded, 'No more appointment proposals are available.', status: 409);
         }
 
         // Same branch every attempt — the project's location doesn't change between them, so
         // re-matching would just do redundant work (and risk picking a different branch if the
-        // matching data changed mid-cycle, which would be confusing for the customer).
-        $branch = $previous ? $previous->branch : $this->branchMatching->findForApplication($application);
+        // matching data changed mid-cycle, which would be confusing for the customer). The
+        // branch is whatever was persisted at submission; matching only as a fallback for
+        // applications that predate that routing (branch_id null).
+        $branch = $previous?->branch
+            ?? Branch::find($application->branch_id)
+            ?? $this->branchMatching->findForApplication($application);
 
         $appointment = DB::transaction(function () use ($application, $branch, $attemptNumber) {
-            [$date, $slotTime] = $this->findNextSlot($branch);
+            $lockedBranch = Branch::query()
+                ->where('id', $branch->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $slot = $this->findNextSlot($lockedBranch, application: $application);
 
             return Appointment::create([
                 'credit_application_id' => $application->id,
-                'branch_id' => $branch->id,
+                'branch_id' => $lockedBranch->id,
                 'attempt_number' => $attemptNumber,
-                'scheduled_date' => $date,
-                'scheduled_time' => $slotTime,
+                'scheduled_date' => $slot['date'],
+                'scheduled_time' => $slot['time'],
                 'status' => Appointment::STATUS_PROPOSED,
+                'is_auto_scheduled_future' => $slot['is_auto_scheduled_future'],
             ]);
         });
 
-        $application->update(['status' => CreditApplication::STATUS_APPOINTMENT_PROPOSED]);
+        $this->stateMachine->apply($application, CreditApplication::STATUS_APPOINTMENT_PROPOSED, $actor, ip: $ip, userAgent: $userAgent);
 
         $this->auditLog->log(
             'credit_application.appointment_proposed',
             $application->user,
-            newState: ['attempt' => $attemptNumber, 'branch_id' => $branch->id, 'date' => (string) $appointment->scheduled_date, 'time' => $appointment->scheduled_time],
+            newState: [
+                'attempt' => $attemptNumber,
+                'branch_id' => $branch->id,
+                'date' => (string) $appointment->scheduled_date,
+                'time' => $appointment->scheduled_time,
+                'is_auto_scheduled_future' => $appointment->is_auto_scheduled_future,
+            ],
             ipAddress: $ip,
             userAgent: $userAgent,
             application: $application,
         );
 
+        // First proposal = appointment.created; every re-proposal after a rejection =
+        // appointment.changed. Distinct types, so both can exist on the same application
+        // without tripping the dedupe index.
+        $this->notifications->notifyUser(
+            $application->user,
+            $attemptNumber === 1 ? 'appointment.created' : 'appointment.changed',
+            $attemptNumber === 1 ? 'Appointment proposed' : 'New appointment proposed',
+            sprintf(
+                'A new appointment has been proposed at %s on %s at %s (proposal %d of %d).',
+                $branch->name,
+                $appointment->scheduled_date->format('Y-m-d'),
+                $appointment->scheduled_time,
+                $attemptNumber,
+                Appointment::MAX_ATTEMPTS,
+            ),
+            ['application_id' => $application->id, 'appointment_id' => $appointment->id],
+            dedupeKey: 'appointment-'.$appointment->id,
+        );
+
         return $appointment;
     }
 
-    public function accept(CreditApplication $application, Appointment $appointment, ?string $ip = null, ?string $userAgent = null): Appointment
+    public function accept(CreditApplication $application, Appointment $appointment, User $actor, ?string $ip = null, ?string $userAgent = null): Appointment
     {
         $this->assertCurrentAndProposed($application, $appointment);
 
-        $appointment->update(['status' => Appointment::STATUS_ACCEPTED, 'decided_at' => now()]);
-        $application->update(['status' => CreditApplication::STATUS_APPOINTMENT_CONFIRMED]);
+        DB::transaction(function () use ($application, $appointment, $actor, $ip, $userAgent) {
+            $appointment->update(['status' => Appointment::STATUS_ACCEPTED, 'decided_at' => now()]);
+            $this->stateMachine->apply($application, CreditApplication::STATUS_APPOINTMENT_CONFIRMED, $actor, ip: $ip, userAgent: $userAgent);
+        });
 
         $this->auditLog->log(
             'credit_application.appointment_accepted',
@@ -88,64 +135,107 @@ class AppointmentSchedulingService
      * the customer never has to take a separate action to ask for a new time. On the 3rd
      * rejection, locks the application for staff instead of proposing again.
      */
-    public function reject(CreditApplication $application, Appointment $appointment, ?string $ip = null, ?string $userAgent = null): Appointment
+    public function reject(CreditApplication $application, Appointment $appointment, User $actor, ?string $ip = null, ?string $userAgent = null): Appointment
     {
         $this->assertCurrentAndProposed($application, $appointment);
 
-        $appointment->update(['status' => Appointment::STATUS_REJECTED, 'decided_at' => now()]);
-
-        $this->auditLog->log(
-            'credit_application.appointment_rejected',
-            $application->user,
-            newState: ['attempt' => $appointment->attempt_number],
-            ipAddress: $ip,
-            userAgent: $userAgent,
-            application: $application,
-        );
-
-        if ($appointment->attempt_number >= Appointment::MAX_ATTEMPTS) {
-            $application->update(['status' => CreditApplication::STATUS_APPOINTMENT_LOCKED]);
+        DB::transaction(function () use ($application, $appointment, $actor, $ip, $userAgent) {
+            $appointment->update(['status' => Appointment::STATUS_REJECTED, 'decided_at' => now()]);
 
             $this->auditLog->log(
-                'credit_application.appointment_locked',
+                'credit_application.appointment_rejected',
                 $application->user,
-                newState: ['reason' => 'max_attempts_exceeded'],
+                newState: ['attempt' => $appointment->attempt_number],
                 ipAddress: $ip,
                 userAgent: $userAgent,
                 application: $application,
             );
 
-            return $appointment->fresh();
-        }
+            if ($appointment->attempt_number >= Appointment::MAX_ATTEMPTS) {
+                $this->stateMachine->apply($application, CreditApplication::STATUS_APPOINTMENT_LOCKED, $actor, ip: $ip, userAgent: $userAgent);
 
-        $this->proposeNext($application, $ip, $userAgent);
+                $this->auditLog->log(
+                    'credit_application.appointment_locked',
+                    $application->user,
+                    newState: ['reason' => 'max_attempts_exceeded'],
+                    ipAddress: $ip,
+                    userAgent: $userAgent,
+                    application: $application,
+                );
+
+                return;
+            }
+
+            $this->proposeNext($application, $actor, $ip, $userAgent);
+        });
 
         return $appointment->fresh();
     }
 
-    /** @return array{0: string, 1: string} [date (Y-m-d), slot time (H:i:s)] */
-    private function findNextSlot(Branch $branch): array
+    /**
+     * Finds the earliest available slot for the branch on working days (Mon-Fri).
+     * Automatically rolls forward to subsequent working days when earlier days reach capacity.
+     *
+     * @return array{date: string, time: string, is_auto_scheduled_future: bool}
+     */
+    public function findNextSlot(Branch $branch, ?Carbon $from = null, ?CreditApplication $application = null): array
     {
         $slotTimes = $branch->slotTimes();
-        $date = Carbon::tomorrow();
+
+        // Earliest possible appointment date is the next working day.
+        $date = ($from ?? Carbon::tomorrow())->copy();
+        while ($date->isWeekend()) {
+            $date->addDay();
+        }
+
+        $initialWorkingDay = $date->copy();
 
         // Bounded search: a branch that's somehow permanently full would otherwise loop forever.
         for ($i = 0; $i < 365; $i++) {
-            $takenCount = Appointment::query()
-                ->where('branch_id', $branch->id)
-                ->whereDate('scheduled_date', $date)
-                ->where('status', '!=', Appointment::STATUS_REJECTED)
-                ->lockForUpdate()
-                ->count();
-
-            if ($takenCount < count($slotTimes)) {
-                return [$date->toDateString(), $slotTimes[$takenCount]];
+            if ($date->isWeekend()) {
+                $date->addDay();
+                continue;
             }
 
-            $date = $date->copy()->addDay();
+            $occupiedSlots = Appointment::query()
+                ->where('branch_id', $branch->id)
+                ->whereDate('scheduled_date', $date)
+                ->whereNotIn('status', [Appointment::STATUS_REJECTED, Appointment::STATUS_CANCELLED])
+                ->whereHas('creditApplication', function ($q) {
+                    $q->where('status', '!=', CreditApplication::STATUS_CANCELLED);
+                })
+                ->lockForUpdate()
+                ->pluck('scheduled_time')
+                ->map(fn ($t) => strlen($t) === 5 ? $t.':00' : $t)
+                ->all();
+
+            $previouslyOfferedSlots = $application
+                ? Appointment::query()
+                    ->where('credit_application_id', $application->id)
+                    ->whereDate('scheduled_date', $date)
+                    ->pluck('scheduled_time')
+                    ->map(fn ($t) => strlen($t) === 5 ? $t.':00' : $t)
+                    ->all()
+                : [];
+
+            foreach ($slotTimes as $slot) {
+                $normalizedSlot = strlen($slot) === 5 ? $slot.':00' : $slot;
+                if (! in_array($normalizedSlot, $occupiedSlots, true) && ! in_array($normalizedSlot, $previouslyOfferedSlots, true)) {
+                    return [
+                        'date' => $date->toDateString(),
+                        'time' => $slot,
+                        'is_auto_scheduled_future' => $date->toDateString() !== $initialWorkingDay->toDateString(),
+                    ];
+                }
+            }
+
+            // All slots for this day are occupied or previously offered; move to next working day.
+            do {
+                $date->addDay();
+            } while ($date->isWeekend());
         }
 
-        throw new ApiException('NO_SLOTS_AVAILABLE', 'This branch has no available appointment slots.', status: 503);
+        throw new ApiException(ApiErrorCode::NoSlotsAvailable);
     }
 
     private function assertCurrentAndProposed(CreditApplication $application, Appointment $appointment): void
@@ -153,11 +243,11 @@ class AppointmentSchedulingService
         $latest = $application->latestAppointment();
 
         if (! $latest || $latest->id !== $appointment->id) {
-            throw new ApiException('NOT_CURRENT_APPOINTMENT', 'This is not the current appointment proposal.', status: 409);
+            throw new ApiException(ApiErrorCode::NotCurrentAppointment);
         }
 
         if ($appointment->status !== Appointment::STATUS_PROPOSED) {
-            throw new ApiException('APPOINTMENT_ALREADY_DECIDED', 'This appointment has already been decided.', status: 409);
+            throw new ApiException(ApiErrorCode::AppointmentAlreadyDecided);
         }
     }
 }

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\CreditApplication;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AppointmentResource;
+use App\Http\Responses\ApiResponse;
 use App\Models\Appointment;
 use App\Models\CreditApplication;
 use App\Services\AppointmentSchedulingService;
@@ -22,15 +24,12 @@ class AppointmentController extends Controller
         $appointment = $application->latestAppointment();
 
         if (! $appointment) {
-            throw new ApiException('NO_APPOINTMENT', 'No appointment has been proposed for this application yet.', status: 404);
+            throw new ApiException(ApiErrorCode::NoAppointment);
         }
 
         $appointment->load('branch');
 
-        return response()->json([
-            'success' => true,
-            'data' => ['appointment' => new AppointmentResource($appointment)],
-        ]);
+        return ApiResponse::ok(['appointment' => new AppointmentResource($appointment)]);
     }
 
     public function accept(Request $request, CreditApplication $application): JsonResponse
@@ -38,13 +37,10 @@ class AppointmentController extends Controller
         $this->authorize('update', $application);
 
         $appointment = $this->currentAppointmentOr404($application);
-        $appointment = $this->scheduling->accept($application, $appointment, $request->ip(), $request->userAgent());
+        $appointment = $this->scheduling->accept($application, $appointment, $request->user(), $request->ip(), $request->userAgent());
         $appointment->load('branch');
 
-        return response()->json([
-            'success' => true,
-            'data' => ['appointment' => new AppointmentResource($appointment)],
-        ]);
+        return ApiResponse::ok(['appointment' => new AppointmentResource($appointment)]);
     }
 
     public function reject(Request $request, CreditApplication $application): JsonResponse
@@ -52,7 +48,7 @@ class AppointmentController extends Controller
         $this->authorize('update', $application);
 
         $appointment = $this->currentAppointmentOr404($application);
-        $this->scheduling->reject($application, $appointment, $request->ip(), $request->userAgent());
+        $this->scheduling->reject($application, $appointment, $request->user(), $request->ip(), $request->userAgent());
 
         $application = $application->fresh();
 
@@ -67,12 +63,9 @@ class AppointmentController extends Controller
             : null;
         $next?->load('branch');
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'application_status' => $application->status,
-                'appointment' => $next ? new AppointmentResource($next) : null,
-            ],
+        return ApiResponse::ok([
+            'application_status' => $application->status,
+            'appointment' => $next ? new AppointmentResource($next) : null,
         ]);
     }
 
@@ -81,7 +74,7 @@ class AppointmentController extends Controller
         $appointment = $application->latestAppointment();
 
         if (! $appointment) {
-            throw new ApiException('NO_APPOINTMENT', 'No appointment has been proposed for this application yet.', status: 404);
+            throw new ApiException(ApiErrorCode::NoAppointment);
         }
 
         return $appointment;

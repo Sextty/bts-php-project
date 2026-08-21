@@ -19,6 +19,8 @@ class BranchFactory extends Factory
             'ville' => fake()->city(),
             'delegation' => fake()->citySuffix(),
             'address' => fake()->streetAddress(),
+            'phone' => fake()->phoneNumber(),
+            'opening_hours' => '08:00 - 12:00',
             'latitude' => fake()->latitude(36, 37),
             'longitude' => fake()->longitude(9, 11),
             'daily_capacity' => 4,

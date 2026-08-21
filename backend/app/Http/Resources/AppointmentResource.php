@@ -17,11 +17,14 @@ class AppointmentResource extends JsonResource
             'scheduled_date' => $this->scheduled_date,
             'scheduled_time' => $this->scheduled_time,
             'status' => $this->status,
+            'is_auto_scheduled_future' => (bool) $this->is_auto_scheduled_future,
             'decided_at' => $this->decided_at,
             'branch' => $this->whenLoaded('branch', fn () => [
+                'id' => $this->branch->id,
                 'name' => $this->branch->name,
                 'address' => $this->branch->address,
                 'ville' => $this->branch->ville,
+                'governorate' => $this->branch->ville,
                 'google_maps_url' => $this->branch->googleMapsUrl(),
             ]),
         ];

@@ -20,6 +20,11 @@ class DocumentResource extends JsonResource
             'ai_is_valid' => $this->ai_is_valid,
             'ai_confidence' => $this->ai_confidence,
             'ai_comment' => $this->ai_comment,
+            'ai_extracted_fields' => $this->ai_extracted_fields,
+            'ai_mismatches' => $this->ai_mismatches,
+            'ai_processing_status' => $this->ai_processing_status,
+            'ai_detected_issues' => $this->ai_detected_issues,
+            'ai_requires_human_review' => $this->ai_requires_human_review,
         ];
     }
 }

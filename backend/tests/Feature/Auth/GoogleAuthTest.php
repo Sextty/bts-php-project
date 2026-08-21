@@ -21,7 +21,7 @@ class GoogleAuthTest extends AuthTestCase
                 'email_verified' => 'true',
                 'given_name' => 'Amel',
                 'family_name' => 'Riahi',
-                'aud' => '',
+                'aud' => config('services.google.client_id', ''),
                 'iss' => 'https://accounts.google.com',
             ], $overrides)),
         ]);

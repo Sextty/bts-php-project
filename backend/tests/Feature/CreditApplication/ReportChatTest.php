@@ -26,6 +26,11 @@ class ReportChatTest extends TestCase
     {
         parent::setUp();
         Storage::fake('documents');
+        \Illuminate\Support\Facades\Http::fake([
+            'generativelanguage.googleapis.com/*' => \Illuminate\Support\Facades\Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode(['is_valid' => true])]]]]],
+            ], 200),
+        ]);
         $this->customer = User::factory()->create();
         $this->staff = StaffUser::factory()->create();
     }
@@ -73,7 +78,6 @@ class ReportChatTest extends TestCase
 
         $this->postJson("/api/applications/{$id}/validation-1");
         $this->postJson("/api/applications/{$id}/validation-2");
-        $this->postJson("/api/applications/{$id}/submit");
 
         $admin = StaffUser::factory()->admin()->create();
 
@@ -84,9 +88,9 @@ class ReportChatTest extends TestCase
         $this->postJson("/api/staff/applications/{$id}/admin-approve");
 
         Sanctum::actingAs($this->customer, ['*']);
-        $this->postJson("/api/applications/{$id}/appointment/reject");
-        $this->postJson("/api/applications/{$id}/appointment/reject");
-        $this->postJson("/api/applications/{$id}/appointment/reject");
+        for ($i = 0; $i < \App\Models\Appointment::MAX_ATTEMPTS; $i++) {
+            $this->postJson("/api/applications/{$id}/appointment/reject");
+        }
 
         return CreditApplication::findOrFail($id);
     }
@@ -115,7 +119,15 @@ class ReportChatTest extends TestCase
             ->assertJsonPath('data.message.sender_type', 'customer')
             ->assertJsonPath('data.message.body', 'None of the proposed times work for me, can someone call me?');
 
-        Event::assertDispatched(ReportMessageSent::class);
+        Event::assertDispatched(ReportMessageSent::class, function (ReportMessageSent $event) use ($application) {
+            $channels = $event->broadcastOn();
+
+            // Must be the private channel the frontend actually subscribes to (echo.private
+            // prepends "private-"); a channel without the prefix would be public in Reverb.
+            return count($channels) === 1
+                && $channels[0] instanceof \Illuminate\Broadcasting\PrivateChannel
+                && $channels[0]->name === "private-application.{$application->id}.report";
+        });
 
         $this->getJson("/api/applications/{$application->id}/report/messages")
             ->assertOk()
@@ -151,12 +163,11 @@ class ReportChatTest extends TestCase
         $application = $this->lockedApplication();
 
         for ($i = 0; $i < 5; $i++) {
+            Sanctum::actingAs($this->customer, ['*']);
             $this->postJson("/api/applications/{$application->id}/report/messages", ['body' => "customer message {$i}"])
                 ->assertCreated();
-        }
 
-        Sanctum::actingAs($this->staff, ['*']);
-        for ($i = 0; $i < 5; $i++) {
+            Sanctum::actingAs($this->staff, ['*']);
             $this->postJson("/api/staff/reports/{$application->id}/messages", ['body' => "staff reply {$i}"])
                 ->assertCreated();
         }
@@ -164,6 +175,27 @@ class ReportChatTest extends TestCase
         $this->getJson("/api/staff/reports/{$application->id}/messages")
             ->assertOk()
             ->assertJsonCount(10, 'data.messages');
+    }
+
+    public function test_customer_cannot_send_consecutive_messages_until_staff_replies(): void
+    {
+        Event::fake([ReportMessageSent::class]);
+        $application = $this->lockedApplication();
+
+        Sanctum::actingAs($this->customer, ['*']);
+        $this->postJson("/api/applications/{$application->id}/report/messages", ['body' => 'first customer message'])
+            ->assertCreated();
+
+        $this->postJson("/api/applications/{$application->id}/report/messages", ['body' => 'second consecutive message'])
+            ->assertStatus(422);
+
+        Sanctum::actingAs($this->staff, ['*']);
+        $this->postJson("/api/staff/reports/{$application->id}/messages", ['body' => 'staff reply'])
+            ->assertCreated();
+
+        Sanctum::actingAs($this->customer, ['*']);
+        $this->postJson("/api/applications/{$application->id}/report/messages", ['body' => 'customer can speak again'])
+            ->assertCreated();
     }
 
     public function test_another_customer_cannot_view_or_message_this_report(): void
@@ -183,5 +215,94 @@ class ReportChatTest extends TestCase
 
         $this->getJson('/api/staff/reports')->assertStatus(403);
         $this->getJson("/api/staff/reports/{$application->id}/messages")->assertStatus(403);
+    }
+
+    public function test_message_sending_survives_realtime_broadcast_failure(): void
+    {
+        $application = $this->lockedApplication();
+
+        // Bind a broadcaster mock that simulates a Reverb socket transport exception
+        $mockBroadcaster = $this->mock(\App\Services\ReportMessageBroadcastService::class);
+        $mockBroadcaster->shouldReceive('send')->once()->andReturnUsing(function ($message) {
+            \Illuminate\Support\Facades\Log::warning('[report-chat] realtime broadcast failed', [
+                'message_id' => $message->id,
+                'exception' => 'Connection to Reverb failed',
+            ]);
+        });
+
+        \Illuminate\Support\Facades\Log::spy();
+
+        $response = $this->postJson("/api/applications/{$application->id}/report/messages", [
+            'body' => 'Message during Reverb outage',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.message.body', 'Message during Reverb outage')
+            ->assertJsonPath('data.message.sender_type', 'customer');
+
+        $this->assertDatabaseHas('report_messages', [
+            'credit_application_id' => $application->id,
+            'body' => 'Message during Reverb outage',
+        ]);
+
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
+            ->withArgs(function ($message, $context) use ($response) {
+                return str_contains($message, 'realtime broadcast failed')
+                    && $context['message_id'] === $response->json('data.message.id');
+            });
+    }
+
+    public function test_customer_can_send_file_attachment_without_body(): void
+    {
+        Storage::fake('local');
+        Event::fake([ReportMessageSent::class]);
+        $application = $this->lockedApplication();
+
+        Sanctum::actingAs($this->customer, ['*']);
+
+        $file = UploadedFile::fake()->create('devis_commercial.pdf', 1024, 'application/pdf');
+
+        $response = $this->post("/api/applications/{$application->id}/report/messages", [
+            'file' => $file,
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.message.sender_type', 'customer')
+            ->assertJsonPath('data.message.has_attachment', true)
+            ->assertJsonPath('data.message.attachment_name', 'devis_commercial.pdf');
+
+        $messageId = $response->json('data.message.id');
+
+        $downloadResponse = $this->get("/api/applications/{$application->id}/report/messages/{$messageId}/attachment");
+        $downloadResponse->assertOk();
+    }
+
+    public function test_staff_can_send_file_attachment(): void
+    {
+        Storage::fake('local');
+        Event::fake([ReportMessageSent::class]);
+        $application = $this->lockedApplication();
+
+        Sanctum::actingAs($this->customer, ['*']);
+        $this->postJson("/api/applications/{$application->id}/report/messages", ['body' => 'Customer message'])->assertCreated();
+
+        Sanctum::actingAs($this->staff, ['*']);
+
+        $file = UploadedFile::fake()->image('facture.png');
+
+        $response = $this->post("/api/staff/reports/{$application->id}/messages", [
+            'body' => 'Voici votre document',
+            'file' => $file,
+        ], ['Accept' => 'application/json']);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.message.sender_type', 'staff')
+            ->assertJsonPath('data.message.has_attachment', true)
+            ->assertJsonPath('data.message.attachment_name', 'facture.png');
+
+        $messageId = $response->json('data.message.id');
+
+        $downloadResponse = $this->get("/api/staff/reports/{$application->id}/messages/{$messageId}/attachment");
+        $downloadResponse->assertOk();
     }
 }

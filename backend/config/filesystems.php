@@ -47,16 +47,24 @@ return [
             'report' => false,
         ],
 
-        // Credit-application document uploads (Part 1 spec, section 8). Not public — served
-        // only through DocumentController's authorized download action. Driver is swappable to
-        // 's3' later purely via DOCUMENTS_DISK/AWS_* env vars, no code change needed.
+        // Credit-application document uploads (Part 1 spec, section 8). Never public — files
+        // are served only through DocumentController/StaffDocumentController's authorized
+        // download actions (no storage URL is ever exposed to clients; S3 downloads stream
+        // through the application, they are never redirected to a bucket URL). Driver is
+        // swappable to 's3' purely via DOCUMENTS_DISK/AWS_* env vars, no code change needed;
+        // `endpoint`/`use_path_style_endpoint` make the same config work against
+        // S3-compatible stores (MinIO, Ceph, Scaleway...) as well as AWS proper.
         'documents' => [
             'driver' => env('DOCUMENTS_DISK', 'local'),
             'root' => storage_path('app/documents'),
+            'visibility' => 'private',
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),
             'region' => env('AWS_DEFAULT_REGION'),
             'bucket' => env('AWS_BUCKET'),
+            'url' => env('AWS_URL'),
+            'endpoint' => env('AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
             'report' => false,
         ],

@@ -9,6 +9,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Branch extends Model
 {
+    public const DEFAULT_SLOTS = [
+        '09:00:00',
+        '11:00:00',
+        '14:00:00',
+        '15:00:00',
+    ];
+
     /** @use HasFactory<BranchFactory> */
     use HasFactory;
 
@@ -17,6 +24,9 @@ class Branch extends Model
         'ville',
         'delegation',
         'address',
+        'phone',
+        'fax',
+        'opening_hours',
         'latitude',
         'longitude',
         'daily_capacity',
@@ -49,11 +59,15 @@ class Branch extends Model
         return "https://www.google.com/maps/search/?api=1&query={$this->latitude},{$this->longitude}";
     }
 
-    /** How many one-hour slots the branch offers per day, derived from its own hours/capacity. */
+    /** How many slots the branch offers per day, derived from standard slots or its own hours/capacity. */
     public function slotTimes(): array
     {
-        $start = \Carbon\Carbon::parse($this->slot_start_time);
-        $windowMinutes = \Carbon\Carbon::parse($this->slot_end_time)->diffInMinutes($start);
+        if ($this->daily_capacity === 4) {
+            return self::DEFAULT_SLOTS;
+        }
+
+        $start = \Carbon\Carbon::parse($this->slot_start_time ?? '09:00:00');
+        $windowMinutes = \Carbon\Carbon::parse($this->slot_end_time ?? '16:00:00')->diffInMinutes($start);
         $intervalMinutes = (int) ($windowMinutes / max($this->daily_capacity, 1));
 
         return collect(range(0, $this->daily_capacity - 1))

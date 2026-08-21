@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,300;1,9..144,400&family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --color-bts-red: #C0272D;
+  --color-bts-red-dark: #9E1F24;
+  --color-bts-red-tint: #FDF2F2;
+  --color-navy: #0C1825;
+  --color-navy-mid: #172436;
+  --color-ink: #1E2D3D;
+  --color-steel: #3D5166;
+  --color-mist: #F4F6F8;
+  --color-rule: #E0E4E9;
+  --color-success: #065F46;
+  --color-success-bg: #D1FAE5;
+  --color-warning: #92400E;
+  --color-warning-bg: #FEF3C7;
+  --color-error: #B91C1C;
+  --color-error-bg: #FEE2E2;
+  --color-info: #1E40AF;
+  --color-info-bg: #DBEAFE;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background: #F8FAFC;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ─── Typography ────────────────────────────────────────────── */
+.font-display { font-family: var(--font-display); }
+
+/* ─── Buttons ───────────────────────────────────────────────── */
+.btn-red {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--color-bts-red);
+  color: #fff; font-weight: 600; font-size: 0.875rem;
+  padding: 10px 24px; border: 1.5px solid var(--color-bts-red);
+  border-radius: 6px; cursor: pointer; text-decoration: none;
+  letter-spacing: 0.01em; white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-red:hover { background: var(--color-bts-red-dark); border-color: var(--color-bts-red-dark); box-shadow: 0 4px 12px rgba(192, 39, 45, 0.25); }
+.btn-red:active { transform: scale(0.98); }
+.btn-red:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.btn-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: #fff; color: var(--color-ink);
+  font-weight: 500; font-size: 0.875rem;
+  padding: 10px 24px; border: 1.5px solid var(--color-rule);
+  border-radius: 6px; cursor: pointer; text-decoration: none;
+  letter-spacing: 0.01em; white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-outline:hover { border-color: var(--color-bts-red); color: var(--color-bts-red); background: var(--color-bts-red-tint); }
+.btn-outline:active { transform: scale(0.98); }
+.btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-ghost-white {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: transparent; color: #fff;
+  font-weight: 500; font-size: 0.875rem;
+  padding: 10px 24px; border: 1.5px solid rgba(255,255,255,0.4);
+  border-radius: 6px; cursor: pointer; text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-ghost-white:hover { border-color: #fff; background: rgba(255,255,255,0.12); }
+
+/* ─── Google Button ─────────────────────────────────────────── */
+.btn-google {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  background: #ffffff; color: #1f2937;
+  font-weight: 500; font-size: 0.875rem;
+  padding: 11px 20px; border: 1.5px solid #e5e7eb;
+  border-radius: 6px; cursor: pointer; text-decoration: none;
+  width: 100%; transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.btn-google:hover { background: #f9fafb; border-color: #d1d5db; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+.btn-google:active { transform: scale(0.99); }
+
+/* ─── Form Inputs ───────────────────────────────────────────── */
+.input-text {
+  width: 100%; font-size: 0.875rem;
+  padding: 10px 14px; color: var(--color-ink);
+  background: #ffffff; border: 1.5px solid var(--color-rule);
+  border-radius: 6px; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-text:focus {
+  border-color: var(--color-bts-red);
+  box-shadow: 0 0 0 3px rgba(192, 39, 45, 0.12);
+}
+.input-text:disabled, .input-text.readonly {
+  background: var(--color-mist);
+  color: var(--color-steel);
+  cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+/* ─── Red overline label ─────────────────────────────────────── */
+.overline {
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--color-bts-red);
+  display: flex; align-items: center; gap: 8px;
+}
+.overline::before {
+  content: ''; display: block; width: 20px; height: 2px;
+  background: var(--color-bts-red); flex-shrink: 0;
+}
+
+/* ─── Status Badges ──────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em;
+  padding: 4px 10px; border-radius: 4px; line-height: 1;
+}
+.badge-warning { color: var(--color-warning); background: var(--color-warning-bg); border: 1px solid #FCD34D; }
+.badge-red { color: var(--color-bts-red); background: var(--color-bts-red-tint); border: 1px solid #FECACA; }
+.badge-success { color: var(--color-success); background: var(--color-success-bg); border: 1px solid #A7F3D0; }
+.badge-info { color: var(--color-info); background: var(--color-info-bg); border: 1px solid #BFDBFE; }
+.badge-neutral { color: var(--color-steel); background: var(--color-mist); border: 1px solid var(--color-rule); }
+
+/* ─── Dynamic Placeholder Tag ────────────────────────────────── */
+.placeholder-tag {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem; font-weight: 600;
+  color: #9333EA; background: #FAF5FF;
+  border: 1px dashed #D8B4FE;
+  padding: 2px 6px; border-radius: 4px;
+}
+
+/* ─── Card Surface ──────────────────────────────────────────── */
+.figma-card {
+  background: #ffffff;
+  border: 1.5px solid var(--color-rule);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(12, 24, 37, 0.04);
+}

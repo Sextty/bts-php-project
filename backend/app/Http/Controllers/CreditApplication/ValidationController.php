@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers\CreditApplication;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CreditApplicationResource;
+use App\Http\Responses\ApiResponse;
 use App\Models\CreditApplication;
 use App\Services\CreditApplicationService;
 use App\Services\CreditApplicationValidationService;
@@ -24,34 +26,30 @@ class ValidationController extends Controller
         $this->applications->assertEditable($application);
 
         if (! $application->hasReached(CreditApplication::STATUS_READY_FOR_VALIDATION_1)) {
-            throw new ApiException('STEPS_INCOMPLETE', 'Complete all three steps before running validation.', status: 409);
+            throw new ApiException(ApiErrorCode::StepsIncomplete);
         }
 
-        $errors = $this->validation->runValidationOne($application, $request->ip(), $request->userAgent());
+        $errors = $this->validation->runValidationOne($application, $request->user(), $request->ip(), $request->userAgent());
 
         if ($errors) {
+            // The one hand-built error response in the app: business-validation output with a
+            // per-document `errors` payload, which the single-code envelope doesn't fit.
             return response()->json([
                 'success' => false,
-                'error' => ['code' => 'VALIDATION_1_FAILED', 'message' => 'Validation failed.', 'errors' => $errors],
+                'error' => ['code' => 'VALIDATION_1_FAILED', 'message' => 'Validation failed.', 'errors' => $errors, 'request_id' => $request->attributes->get('request_id')],
             ], 422);
         }
 
-        return response()->json([
-            'success' => true,
-            'data' => ['application' => new CreditApplicationResource($this->loadFull($application))],
-        ]);
+        return ApiResponse::ok(['application' => new CreditApplicationResource($this->loadFull($application))]);
     }
 
     public function validationTwo(Request $request, CreditApplication $application): JsonResponse
     {
         $this->authorize('update', $application);
 
-        $application = $this->applications->confirmValidationTwoAndLock($application, $request->ip(), $request->userAgent());
+        $application = $this->applications->confirmValidationTwoAndLock($application, $request->user(), $request->ip(), $request->userAgent());
 
-        return response()->json([
-            'success' => true,
-            'data' => ['application' => new CreditApplicationResource($this->loadFull($application))],
-        ]);
+        return ApiResponse::ok(['application' => new CreditApplicationResource($this->loadFull($application))]);
     }
 
     /**
@@ -63,6 +61,6 @@ class ValidationController extends Controller
      */
     private function loadFull(CreditApplication $application): CreditApplication
     {
-        return $application->fresh(['client', 'creditRequest', 'project', 'documents', 'validationSteps']);
+        return $application->fresh(['client', 'creditRequest', 'project', 'documents', 'validationSteps', 'branch', 'appointments.branch']);
     }
 }

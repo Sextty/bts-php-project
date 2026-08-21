@@ -1,0 +1,110 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E3F2FD',
+    'primaryTextColor': '#0D47A1',
+    'primaryBorderColor': '#1565C0',
+    'lineColor': '#37474F',
+    'secondaryColor': '#EDE7F6',
+    'tertiaryColor': '#FFF3E0',
+    'fontFamily': 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    'fontSize': '13px'
+  }
+}}%%
+
+flowchart TB
+    %% -----------------------------------------------------------------
+    %% BTS BANK - DEPLOYMENT & INFRASTRUCTURE TOPOLOGY
+    %% -----------------------------------------------------------------
+
+    %% Color Class Definitions
+    classDef userDevice fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1;
+    classDef proxy fill:#ECEFF1,stroke:#37474F,stroke-width:2px,color:#263238;
+    classDef frontendSvc fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20;
+    classDef backendSvc fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C;
+    classDef realtimeSvc fill:#E0F7FA,stroke:#00695C,stroke-width:2px,color:#004D40;
+    classDef dataSvc fill:#EDE7F6,stroke:#4527A0,stroke-width:2px,color:#311B92;
+    classDef cloudSvc fill:#FCE4EC,stroke:#C62828,stroke-width:2px,color:#B71C1C;
+
+    subgraph CLIENT_TIER["1. END USER ACCESS TIER (Client Devices)"]
+        direction LR
+        BROWSER_USER["Web Browser (Client)<br/>• Borrower Portal UI<br/>• WebSockets Client"]:::userDevice
+        BROWSER_STAFF["Agency Desktop (Staff)<br/>• Agency Review UI<br/>• Live Chat Session"]:::userDevice
+        BROWSER_ADMIN["Central Management (Admin)<br/>• Direction Centrale UI<br/>• KPI & Governance"]:::userDevice
+    end
+
+    subgraph PROXY_TIER["2. REVERSE PROXY & SSL TERMINATION TIER"]
+        NGINX["Nginx Web Server / Load Balancer<br/>• Ports: 80 (HTTP Redirect) / 443 (HTTPS)<br/>• SSL/TLS Termination & Security Headers<br/>• Reverse Proxy & Static Asset Caching"]:::proxy
+    end
+
+    subgraph APP_CONTAINERS["3. APPLICATION CONTAINERS & SERVERS"]
+        subgraph FRONTEND_CLUSTER["Frontend Services (Node.js 20+ Runtime)"]
+            direction LR
+            NODE_CLIENT["Next.js Client Application<br/>Port: 3000<br/>Borrower Onboarding & Credit Wizard"]:::frontendSvc
+            NODE_STAFF["Next.js Staff Application<br/>Port: 3001<br/>Agency Dossier Processing & Chat"]:::frontendSvc
+            NODE_ADMIN["Next.js Admin Application<br/>Port: 3002<br/>Central Management & Governance"]:::frontendSvc
+        end
+
+        subgraph BACKEND_CLUSTER["Backend Services (PHP 8.2+ FPM & CLI)"]
+            LARAVEL_API["Laravel 11 REST API Server<br/>Port: 8000 (PHP-FPM)<br/>• Sanctum Auth & Middleware<br/>• Core Business & Credit Services"]:::backendSvc
+            LARAVEL_REVERB["Laravel Reverb WebSockets<br/>Port: 6001 / 8080<br/>• Real-time Dossier Chat<br/>• Live Status & Event Broadcasts"]:::realtimeSvc
+            ARTISAN_QUEUE["Artisan Queue Worker<br/>CLI Supervisor Process<br/>• Asynchronous AI OCR Processing<br/>• Background Emails & Notifications"]:::backendSvc
+        end
+    end
+
+    subgraph PERSISTENCE_TIER["4. PERSISTENCE & STORAGE TIER"]
+        MYSQL_SRV[("MySQL Database Server 8.x<br/>Port: 3306<br/>Database: bts_php_backend<br/>InnoDB / ACID Transactions")]:::dataSvc
+        FILE_SYSTEM["Persistent File Storage<br/>Path: storage/app/documents<br/>• Encrypted CIN / Invoices / Deeds<br/>• Local Disks & Symbolic Links"]:::dataSvc
+    end
+
+    subgraph CLOUD_TIER["5. THIRD-PARTY INTEGRATIONS & CLOUD APIS"]
+        direction LR
+        API_GEMINI["Google Gemini Vision AI API<br/>• REST v1beta HTTPS<br/>• Automated Document & CIN OCR"]:::cloudSvc
+        API_SMTP["Gmail SMTP / Resend Email<br/>• Port: 587 (TLS)<br/>• 2FA OTP Delivery & Alerts"]:::cloudSvc
+        API_PHOTON["Photon OSM Geocoding Service<br/>• Public REST HTTPS<br/>• Dynamic Branch Lookup & Mapping"]:::cloudSvc
+    end
+
+    %% Ingress Network Flows
+    BROWSER_USER -->|"HTTP / HTTPS :443"| NGINX
+    BROWSER_STAFF -->|"HTTP / HTTPS :443"| NGINX
+    BROWSER_ADMIN -->|"HTTP / HTTPS :443"| NGINX
+
+    %% Nginx Routing to Frontends
+    NGINX -->|"Proxy Pass :3000"| NODE_CLIENT
+    NGINX -->|"Proxy Pass :3001"| NODE_STAFF
+    NGINX -->|"Proxy Pass :3002"| NODE_ADMIN
+
+    %% Frontend to Backend API Calls (Thick Arrows)
+    NODE_CLIENT ==>|"REST API :8000"| LARAVEL_API
+    NODE_STAFF ==>|"REST API :8000"| LARAVEL_API
+    NODE_ADMIN ==>|"REST API :8000"| LARAVEL_API
+
+    %% Real-time WebSocket Channels
+    BROWSER_USER <==>|"WSS Realtime :6001"| LARAVEL_REVERB
+    BROWSER_STAFF <==>|"WSS Realtime :6001"| LARAVEL_REVERB
+
+    %% Backend Internal Communications (Thick Arrows)
+    LARAVEL_API ==>|"SQL Queries :3306"| MYSQL_SRV
+    LARAVEL_API ==>|"Read / Write Document I/O"| FILE_SYSTEM
+    LARAVEL_API ==>|"Broadcast Events"| LARAVEL_REVERB
+    LARAVEL_API ==>|"Dispatch Async Jobs"| ARTISAN_QUEUE
+
+    %% Queue Worker Processing Flows
+    ARTISAN_QUEUE ==>|"Read Stored Docs"| FILE_SYSTEM
+    ARTISAN_QUEUE ==>|"Update Dossier Status"| MYSQL_SRV
+    ARTISAN_QUEUE ==>|"Broadcast AI Results"| LARAVEL_REVERB
+
+    %% Third-Party Cloud Integrations
+    LARAVEL_API ==>|"HTTPS REST (Direct OCR)"| API_GEMINI
+    ARTISAN_QUEUE ==>|"HTTPS REST (Async OCR)"| API_GEMINI
+    LARAVEL_API ==>|"SMTP TLS :587"| API_SMTP
+    NODE_CLIENT -.->|"HTTPS Geocoding Lookup"| API_PHOTON
+
+    %% Subgraph Styling
+    style CLIENT_TIER fill:#F0F7FF,stroke:#90CAF9,stroke-width:1.5px,color:#0D47A1
+    style PROXY_TIER fill:#ECEFF1,stroke:#90A4AE,stroke-width:1.5px,color:#263238
+    style APP_CONTAINERS fill:#FAFAFA,stroke:#BDBDBD,stroke-width:1.5px,color:#212121
+    style FRONTEND_CLUSTER fill:#F1F8E9,stroke:#A5D6A7,stroke-width:1.5px,color:#1B5E20
+    style BACKEND_CLUSTER fill:#FFF8E1,stroke:#FFE082,stroke-width:1.5px,color:#BF360C
+    style PERSISTENCE_TIER fill:#F3E5F5,stroke:#CE93D8,stroke-width:1.5px,color:#311B92
+    style CLOUD_TIER fill:#FFEBEE,stroke:#EF9A9A,stroke-width:1.5px,color:#B71C1C

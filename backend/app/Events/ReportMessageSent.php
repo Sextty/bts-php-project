@@ -26,6 +26,9 @@ class ReportMessageSent implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
+        // PrivateChannel prepends "private-" itself, so the bare name is passed — the resulting
+        // channel is "private-application.{id}.report", which matches the pattern registered in
+        // routes/channels.php. A channel without that prefix would be PUBLIC in Reverb.
         return [new PrivateChannel("application.{$this->message->credit_application_id}.report")];
     }
 

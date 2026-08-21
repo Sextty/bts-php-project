@@ -19,7 +19,16 @@ class ReportMessage extends Model
         'user_id',
         'staff_user_id',
         'body',
+        'attachment_path',
+        'attachment_name',
+        'attachment_type',
+        'attachment_size',
     ];
+
+    public function hasAttachment(): bool
+    {
+        return !empty($this->attachment_path);
+    }
 
     public function creditApplication(): BelongsTo
     {

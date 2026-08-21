@@ -61,7 +61,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
             ->assertJsonPath('error.code', 'STEPS_INCOMPLETE');
     }
 
-    public function test_validation_2_locks_the_application(): void
+    public function test_validation_2_auto_submits_the_application(): void
     {
         $application = $this->newApplication();
         $this->completeAllThreeSteps($application);
@@ -74,9 +74,10 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $response = $this->postJson("/api/applications/{$application->id}/validation-2");
 
         $response->assertOk()
-            ->assertJsonPath('data.application.status', CreditApplication::STATUS_FINAL_LOCKED)
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_SUBMITTED)
             ->assertJsonPath('data.application.is_locked', true)
-            ->assertJsonStructure(['data' => ['application' => ['client', 'credit_request', 'project']]]);
+            ->assertJsonStructure(['data' => ['application' => ['client', 'credit_request', 'project', 'branch']]]);
+        $this->assertNotNull($application->fresh()->submitted_at);
     }
 
     public function test_validation_2_is_rejected_before_validation_1_passes(): void
@@ -136,9 +137,65 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");
 
-        $response = $this->postJson("/api/applications/{$application->id}/submit");
+        // After validation-2, the application is already auto-submitted (SUBMITTED).
+        // Calling submit again should be rejected because it requires FINAL_LOCKED.
+        $this->postJson("/api/applications/{$application->id}/submit")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'APPLICATION_NOT_LOCKED');
 
-        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_SUBMITTED);
+        $this->assertSame(CreditApplication::STATUS_SUBMITTED, $application->fresh()->status);
         $this->assertNotNull($application->fresh()->submitted_at);
+    }
+
+    public function test_validation_1_passes_with_fdr_financing_document(): void
+    {
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+        $this->postJson("/api/applications/{$application->id}/documents", [
+            'document_type' => 'fdr',
+            'file' => UploadedFile::fake()->create('facture_fdr.pdf', 500, 'application/pdf'),
+        ])->assertCreated();
+
+        $response = $this->postJson("/api/applications/{$application->id}/validation-1");
+        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+    }
+
+    public function test_validation_1_passes_with_amg_financing_document(): void
+    {
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+        $this->postJson("/api/applications/{$application->id}/documents", [
+            'document_type' => 'amg',
+            'file' => UploadedFile::fake()->create('devis_travaux_amg.pdf', 500, 'application/pdf'),
+        ])->assertCreated();
+
+        $response = $this->postJson("/api/applications/{$application->id}/validation-1");
+        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+    }
+
+    public function test_validation_1_passes_with_chp_financing_document(): void
+    {
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+        $this->postJson("/api/applications/{$application->id}/documents", [
+            'document_type' => 'chp',
+            'file' => UploadedFile::fake()->create('proforma_cheptel_chp.pdf', 500, 'application/pdf'),
+        ])->assertCreated();
+
+        $response = $this->postJson("/api/applications/{$application->id}/validation-1");
+        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+    }
+
+    public function test_validation_1_passes_with_epr_financing_document(): void
+    {
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+        $this->postJson("/api/applications/{$application->id}/documents", [
+            'document_type' => 'epr',
+            'file' => UploadedFile::fake()->create('devis_materiel_epr.pdf', 500, 'application/pdf'),
+        ])->assertCreated();
+
+        $response = $this->postJson("/api/applications/{$application->id}/validation-1");
+        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
     }
 }

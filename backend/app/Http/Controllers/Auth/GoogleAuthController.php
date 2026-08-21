@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\GoogleAuthRequest;
 use App\Http\Requests\Auth\GoogleSetPhoneRequest;
 use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Http\Resources\UserResource;
+use App\Http\Responses\ApiResponse;
 use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\CustomerAuthService;
 use App\Services\Google\GoogleTokenVerifier;
-use App\Services\OtpService;
 use App\Services\PreAuthTokenService;
 use Illuminate\Http\JsonResponse;
 
@@ -28,7 +30,7 @@ class GoogleAuthController extends Controller
 
     public function __construct(
         private readonly GoogleTokenVerifier $verifier,
-        private readonly OtpService $otp,
+        private readonly CustomerAuthService $auth,
         private readonly PreAuthTokenService $preAuth,
         private readonly AuditLogService $auditLog,
     ) {}
@@ -45,7 +47,7 @@ class GoogleAuthController extends Controller
             if (! $identity->emailVerified) {
                 $this->auditLog->log('auth.google.rejected', null, newState: ['reason' => 'email_not_verified'], ipAddress: $request->ip(), userAgent: $request->userAgent());
 
-                throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed.', status: 401);
+                throw new ApiException(ApiErrorCode::GoogleTokenInvalid);
             }
 
             $existingByEmail = $identity->email ? User::where('email', $identity->email)->first() : null;
@@ -71,28 +73,18 @@ class GoogleAuthController extends Controller
         $this->auditLog->log('auth.google.verified', $user, ipAddress: $request->ip(), userAgent: $request->userAgent());
 
         if ($user->isPhoneVerified()) {
-            $token = $user->createToken('api')->plainTextToken;
-            $this->auditLog->log('auth.session.created', $user, newState: ['via' => 'google'], ipAddress: $request->ip(), userAgent: $request->userAgent());
+            $token = $this->auth->issueSession($user, 'google', $request->ip(), $request->userAgent());
 
-            return response()->json([
-                'success' => true,
-                'data' => ['access_token' => $token, 'user' => new UserResource($user)],
-            ]);
+            return ApiResponse::ok(['access_token' => $token, 'user' => new UserResource($user)]);
         }
 
         if (! $user->phone) {
-            return response()->json([
-                'success' => true,
-                'data' => ['requires_phone' => true, 'pre_auth_token' => $this->preAuth->issue($user, self::PURPOSE)],
-            ]);
+            return ApiResponse::ok(['requires_phone' => true, 'pre_auth_token' => $this->preAuth->issue($user, self::PURPOSE)]);
         }
 
-        $this->otp->generateAndSend($user, self::PURPOSE, $request->ip(), $request->userAgent());
+        $preAuthToken = $this->auth->beginOtpChallenge($user, self::PURPOSE, $request->ip(), $request->userAgent());
 
-        return response()->json([
-            'success' => true,
-            'data' => ['requires_otp' => true, 'pre_auth_token' => $this->preAuth->issue($user, self::PURPOSE)],
-        ]);
+        return ApiResponse::ok(['requires_otp' => true, 'pre_auth_token' => $preAuthToken]);
     }
 
     /** Sets the phone number for a Google user with none yet, then sends the OTP. */
@@ -102,30 +94,24 @@ class GoogleAuthController extends Controller
 
         $user->forceFill(['phone' => $request->string('phone')])->save();
 
-        $this->otp->generateAndSend($user, self::PURPOSE, $request->ip(), $request->userAgent());
+        $preAuthToken = $this->auth->beginOtpChallenge($user, self::PURPOSE, $request->ip(), $request->userAgent());
 
-        return response()->json([
-            'success' => true,
-            'data' => ['requires_otp' => true, 'pre_auth_token' => $this->preAuth->issue($user, self::PURPOSE)],
-        ]);
+        return ApiResponse::ok(['requires_otp' => true, 'pre_auth_token' => $preAuthToken]);
     }
 
     public function verifyOtp(VerifyOtpRequest $request): JsonResponse
     {
-        $user = $this->preAuth->resolve($request->string('pre_auth_token'), self::PURPOSE);
+        $result = $this->auth->completeOtpChallenge(
+            $request->string('pre_auth_token'),
+            self::PURPOSE,
+            $request->string('otp_code'),
+            'google',
+            $request->ip(),
+            $request->userAgent(),
+        );
 
-        $this->otp->verify($user, self::PURPOSE, $request->string('otp_code'), $request->ip(), $request->userAgent());
+        $result['user']->forceFill(['phone_verified_at' => now()])->save();
 
-        $user->forceFill(['phone_verified_at' => now()])->save();
-        $this->preAuth->invalidate($request->string('pre_auth_token'));
-
-        $token = $user->createToken('api')->plainTextToken;
-
-        $this->auditLog->log('auth.session.created', $user, newState: ['via' => 'google'], ipAddress: $request->ip(), userAgent: $request->userAgent());
-
-        return response()->json([
-            'success' => true,
-            'data' => ['access_token' => $token, 'user' => new UserResource($user)],
-        ]);
+        return ApiResponse::ok(['access_token' => $result['token'], 'user' => new UserResource($result['user'])]);
     }
 }

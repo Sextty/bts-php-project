@@ -4,6 +4,7 @@ namespace App\Contracts;
 
 use App\Models\User;
 use App\Services\Sms\SmsDeliveryResult;
+use App\ValueObjects\OtpMessage;
 
 /**
  * Swappable OTP transport. Bound in AppServiceProvider based on the SMS_PROVIDER env var, so a
@@ -15,10 +16,14 @@ use App\Services\Sms\SmsDeliveryResult;
  * recipient the same way — SMS drivers use $user->phone, email uses $user->email — and only the
  * driver needs to know which. Keeping that resolution inside the driver is what lets OtpService
  * stay channel-agnostic.
+ *
+ * The message is an OtpMessage value object — the code and TTL as first-class values plus a
+ * pre-formatted body for plain-text channels — so drivers never have to scrape the code back
+ * out of the text (EmailOtpDriver used to regex it out of the flat string).
  */
 interface SmsProviderInterface
 {
-    public function send(User $user, string $message): SmsDeliveryResult;
+    public function send(User $user, OtpMessage $message): SmsDeliveryResult;
 
     /**
      * Whether this channel can actually reach the user right now. Exists for channels that

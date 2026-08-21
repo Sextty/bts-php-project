@@ -2,6 +2,7 @@
 
 namespace App\Services\Google;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use Illuminate\Support\Facades\Http;
 
@@ -21,29 +22,29 @@ class GoogleTokenVerifier
         $response = Http::get('https://oauth2.googleapis.com/tokeninfo', ['id_token' => $idToken]);
 
         if ($response->failed()) {
-            throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed.', status: 401);
+            throw new ApiException(ApiErrorCode::GoogleTokenInvalid);
         }
 
         $payload = $response->json();
 
         $expectedAudience = config('services.google.client_id');
         if ($expectedAudience && ($payload['aud'] ?? null) !== $expectedAudience) {
-            throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed.', status: 401);
+            throw new ApiException(ApiErrorCode::GoogleTokenInvalid);
         }
 
         $issuer = $payload['iss'] ?? null;
         if (! in_array($issuer, ['https://accounts.google.com', 'accounts.google.com'], true)) {
-            throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed.', status: 401);
+            throw new ApiException(ApiErrorCode::GoogleTokenInvalid);
         }
 
         if (empty($payload['sub'])) {
-            throw new ApiException('GOOGLE_TOKEN_INVALID', 'Google sign-in failed.', status: 401);
+            throw new ApiException(ApiErrorCode::GoogleTokenInvalid);
         }
 
         return new GoogleIdentity(
             sub: $payload['sub'],
             email: $payload['email'] ?? null,
-            emailVerified: ($payload['email_verified'] ?? 'false') === 'true',
+            emailVerified: filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN),
             givenName: $payload['given_name'] ?? null,
             familyName: $payload['family_name'] ?? null,
         );

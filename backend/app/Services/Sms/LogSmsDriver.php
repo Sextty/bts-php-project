@@ -4,6 +4,7 @@ namespace App\Services\Sms;
 
 use App\Contracts\SmsProviderInterface;
 use App\Models\User;
+use App\ValueObjects\OtpMessage;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -12,11 +13,11 @@ use Illuminate\Support\Facades\Log;
  */
 class LogSmsDriver implements SmsProviderInterface
 {
-    public function send(User $user, string $message): SmsDeliveryResult
+    public function send(User $user, OtpMessage $message): SmsDeliveryResult
     {
         Log::channel(config('logging.default'))->info('[sms:log-driver] outgoing SMS', [
             'to' => (string) $user->phone,
-            'message' => $message,
+            'message' => $message->body,
         ]);
 
         return SmsDeliveryResult::success();

@@ -21,6 +21,11 @@ class Document extends Model
         'ai_is_valid',
         'ai_confidence',
         'ai_comment',
+        'ai_extracted_fields',
+        'ai_mismatches',
+        'ai_processing_status',
+        'ai_detected_issues',
+        'ai_requires_human_review',
     ];
 
     protected function casts(): array
@@ -29,6 +34,10 @@ class Document extends Model
             'size_bytes' => 'integer',
             'ai_verified_at' => 'datetime',
             'ai_is_valid' => 'boolean',
+            'ai_extracted_fields' => 'array',
+            'ai_mismatches' => 'array',
+            'ai_detected_issues' => 'array',
+            'ai_requires_human_review' => 'boolean',
         ];
     }
 

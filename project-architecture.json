@@ -1,0 +1,246 @@
+{
+  "BTS_Bank_Platform": {
+    "Overview": {
+      "System_Name": "BTS Bank — Plateforme Digitale d'Octroi de Crédit",
+      "Mission": "Numérisation de bout en bout de l'instruction, l'évaluation IA, et l'approbation des crédits d'entreprise",
+      "Institution": "Banque Tunisienne de Solidarité (BTS Bank)",
+      "Architecture_Type": "Monorepo Multi-Apps Découplé (1 Backend API + 3 Portails Frontend)",
+      "Primary_Stack": {
+        "Backend": "Laravel 11 (PHP 8.2+ REST API)",
+        "Frontend": "Next.js 16 (React 19 + TypeScript + TailwindCSS)",
+        "Database": "MySQL 8.0 (bts_php_backend sur port 3306)",
+        "Realtime_WebSockets": "Laravel Reverb (Pusher Protocol sur port 8080/6001)",
+        "AI_Engine": "Google Gemini Vision API (Advisory OCR & Authenticity Verification)",
+        "Geolocation": "OpenStreetMap & Photon Geocoding API"
+      }
+    },
+    "Frontend_Applications": {
+      "Client_Portal": {
+        "Base_URL": "http://localhost:3000",
+        "Target_Audience": "Porteurs de projets, Entrepreneurs & Clients BTS",
+        "Security_Model": "Sanctum Bearer Token + 2FA OTP + Google OAuth",
+        "Key_Routes_and_Features": {
+          "Public_Access": {
+            "Home": "/",
+            "Register": "/register",
+            "Register_OTP": "/register/verify-otp",
+            "Login": "/login",
+            "Login_OTP": "/login/verify-otp"
+          },
+          "Client_Dashboard": {
+            "Overview": "/dashboard",
+            "Applications_Index": "/applications",
+            "Wizard_Launcher": "/applications/new"
+          },
+          "Application_Wizard_Steps": {
+            "Step_1_Identity": "/applications/[id]/client (Infos personnelles, CIN, Naissance)",
+            "Step_2_Credit_Request": "/applications/[id]/credit (Montant, Type, Sélection agence + Carte GPS)",
+            "Step_3_Project_Financials": "/applications/[id]/project (Activité, Coûts, Prévisions, Emplois créés)",
+            "Step_4_Document_Upload": "/applications/[id]/validation (Pièces justificatives + Vérification IA)",
+            "Appointment_Booking": "/applications/[id]/appointment (Choix créneau RDV physique)",
+            "Direct_Staff_Chat": "/applications/[id]/report (Messagerie instantanée sur dossier)"
+          }
+        }
+      },
+      "Staff_Portal": {
+        "Base_URL": "http://localhost:3001",
+        "Target_Audience": "Agents de Crédit en Agences Régionales BTS",
+        "Provisioning": "Création sécurisée par CLI (php artisan staff:make email@bts.tn --role=staff)",
+        "Key_Capabilities": {
+          "Dossier_Triage": "Filtrage et consultation des dossiers assignés à l'agence locale",
+          "AI_Audit_Inspector": "Visualisation des scores d'authenticité et alertes IA sur les justificatifs",
+          "Tier_1_Decision": "Validation technique initiale (STAFF_APPROVED) ou Rejet motivé (STAFF_REJECTED)",
+          "Realtime_Assistance": "Discussion directe avec le demandeur sur dossier verrouillé",
+          "Appointment_Coordination": "Confirmation des créneaux de rendez-vous pour dépôt physique"
+        }
+      },
+      "Admin_Portal": {
+        "Base_URL": "http://localhost:3002",
+        "Target_Audience": "Direction Centrale des Engagements & Administrateurs BTS",
+        "Provisioning": "Création sécurisée par CLI (php artisan staff:make admin@bts.tn --role=admin)",
+        "Key_Capabilities": {
+          "Executive_Dashboard": "Statistiques nationales, montants sollicités, taux de conversion et d'approbation",
+          "Tier_2_Final_Decision": "Décision souveraine finale (APPROVED / REJECTED)",
+          "Appointment_Trigger": "Ouverture automatique du calendrier de RDV après accord",
+          "Branch_and_Staff_Governance": "Gestion du réseau des 24 agences et supervision des agents",
+          "Audit_Trail": "Traçabilité intégrale des décisions et horodatage immuable"
+        }
+      }
+    },
+    "Backend_API_Architecture": {
+      "Base_URL": "http://127.0.0.1:8000",
+      "Framework": "Laravel 11 (PHP 8.2+)",
+      "Security_and_Middleware": {
+        "Authentication": "Laravel Sanctum (Stateful & Personal Access Bearer Tokens)",
+        "Two_Factor_Verification": "Code OTP à 6 chiffres (Drivers: Email SMTP Gmail / Vonage SMS / Log)",
+        "Rate_Limiting": "Protection brute-force sur /api/auth (6-30 requêtes/min)",
+        "Role_Authorization": "Guards dédiés (auth:sanctum, staff, staff.role:admin)"
+      },
+      "Core_Domain_Services": {
+        "Auth_Identity_Domain": [
+          "RegisterController / LoginController",
+          "OtpService (Génération, hachage, expiration 10 min)",
+          "GoogleAuthController (Vérification OAuth ID-Token)"
+        ],
+        "Credit_Application_Domain": [
+          "CreditApplicationService (Orchestration du cycle de vie)",
+          "ApplicationNumberService (Génération format BTS-YYYYMM-XXXXX)",
+          "CreditApplicationValidationService (Contrôle d'éligibilité et seuils)"
+        ],
+        "AI_Document_Intelligence": [
+          "DocumentVerificationService (Interrogation Gemini AI Vision)",
+          "PromptBuilder (Extraction OCR, détection falsification, score confiance)",
+          "DocumentAuditAdvisor (Résultat advisory non-bloquant pour l'agent)"
+        ],
+        "Geo_and_Branch_Routing": [
+          "BranchMatchingService (Calcul proximité géographique)",
+          "Photon Geocoding Client (Recherche d'adresses gratuite sans clé)",
+          "Leaflet/OSM Mapping (Coordonnées GPS agences BTS)"
+        ],
+        "Realtime_and_Communication": [
+          "Laravel Reverb (Serveur WebSockets intégré)",
+          "ReportMessageService (Chat en direct client-staff)",
+          "NotificationBroadcastService (Alertes push de changement de statut)"
+        ],
+        "Appointment_Scheduling": [
+          "AppointmentSchedulingService (Gestion des créneaux d'agence)",
+          "BranchCalendarManager (Contrôle de capacité d'accueil)"
+        ]
+      }
+    },
+    "Credit_Application_Lifecycle": {
+      "Phase_1_Customer_Onboarding": {
+        "Step_01_Registration": "Création de compte client avec email et mot de passe chiffré (Argon2id/Bcrypt)",
+        "Step_02_OTP_Challenge": "Vérification 2FA obligatoire par code à 6 chiffres",
+        "Step_03_Session_Active": "Émission du Bearer Token Sanctum et ouverture du Dashboard"
+      },
+      "Phase_2_Application_Wizard_Dossier": {
+        "Status_DRAFT": "Initialisation du dossier et attribution du numéro unique",
+        "Status_STEP_1_COMPLETED": "Validation des données d'identité du demandeur (CIN, état civil, adresse)",
+        "Status_STEP_2_COMPLETED": "Validation du besoin de financement (montant, durée, agence BTS assignée)",
+        "Status_STEP_3_COMPLETED": "Validation du projet économique (secteur, coûts d'investissement, plan d'affaires)",
+        "Status_READY_FOR_VALIDATION_1": "Téléversement des pièces justificatives requis (CIN, devis, statuts, attestations)"
+      },
+      "Phase_3_AI_Audit_and_Locking": {
+        "Status_VALIDATION_1_COMPLETED": "Analyse automatique des documents par Gemini AI (OCR, authenticité, score)",
+        "Status_VALIDATION_2": "Vérification des règles d'éligibilité métier et complétude",
+        "Status_FINAL_LOCKED": "Verrouillage strict en écriture : le client ne peut plus modifier les données",
+        "Status_SUBMITTED": "Dossier soumis formellement et transféré à la file d'attente de l'agence locale"
+      },
+      "Phase_4_Two_Tier_Credit_Review": {
+        "Tier_1_Agency_Staff": {
+          "Action": "Examen de recevabilité par l'agent de crédit d'agence",
+          "Outcomes": {
+            "STAFF_APPROVED": "Dossier validé techniquement et transmis à la Direction Centrale",
+            "STAFF_REJECTED": "Dossier refusé avec motif consigné et notifié au client"
+          }
+        },
+        "Tier_2_Central_Admin": {
+          "Action": "Examen décisionnel final par le comité de crédit",
+          "Outcomes": {
+            "APPROVED": "Accord de principe accordé → Déclenchement de l'étape Rendez-vous",
+            "REJECTED": "Refus définitif motivé avec notification formelle"
+          }
+        }
+      },
+      "Phase_5_Agency_Appointment_and_Signature": {
+        "Status_APPOINTMENT_PROPOSED": "Le système propose au client de choisir une date de RDV en agence",
+        "Status_APPOINTMENT_CONFIRMED": "Le client sélectionne son créneau horaire",
+        "Status_APPOINTMENT_LOCKED": "Visite physique effectuée, signature des contrats et clôture du dossier numérique"
+      }
+    },
+    "Database_Entities_Schema": {
+      "users": {
+        "Role": "Table des comptes clients",
+        "Key_Fields": ["id", "name", "email", "phone", "email_verified_at", "phone_verified_at", "password", "remember_token"],
+        "Relations": "HasMany(credit_applications), HasMany(app_notifications)"
+      },
+      "staff_users": {
+        "Role": "Table des agents bancaires et administrateurs",
+        "Key_Fields": ["id", "first_name", "last_name", "email", "role [staff | admin]", "branch_id", "password", "is_active"],
+        "Relations": "BelongsTo(branch), HasMany(decided_applications), HasMany(report_messages)"
+      },
+      "credit_applications": {
+        "Role": "Entité centrale du dossier de crédit",
+        "Key_Fields": [
+          "id",
+          "application_number (BTS-YYYYMM-XXXXX)",
+          "user_id",
+          "branch_id",
+          "status [DRAFT -> APPOINTMENT_LOCKED]",
+          "is_locked",
+          "submitted_at",
+          "decided_by_staff_user_id",
+          "decided_by_admin_user_id",
+          "rejection_reason",
+          "report_closed_at"
+        ],
+        "Relations": "BelongsTo(user), BelongsTo(branch), HasOne(client), HasOne(credit_request), HasOne(project), HasMany(documents), HasOne(appointment), HasMany(report_messages)"
+      },
+      "clients": {
+        "Role": "Fiche signalétique demandeur",
+        "Key_Fields": ["id", "credit_application_id", "cin_number", "first_name", "last_name", "birth_date", "birth_place", "address", "city", "postal_code", "marital_status", "monthly_income"]
+      },
+      "credit_requests": {
+        "Role": "Paramètres financiers du prêt",
+        "Key_Fields": ["id", "credit_application_id", "requested_amount", "credit_type", "repayment_duration_months", "preferred_branch_id", "grace_period_months"]
+      },
+      "projects": {
+        "Role": "Description de l'entreprise ou du projet",
+        "Key_Fields": ["id", "credit_application_id", "project_title", "sector_of_activity", "legal_form", "total_investment_cost", "own_contribution", "expected_jobs_created", "project_address"]
+      },
+      "documents": {
+        "Role": "Justificatifs téléversés avec métadonnées IA",
+        "Key_Fields": ["id", "credit_application_id", "document_type [CIN, DEVIS, STATUTS, RELEVE]", "file_path", "original_name", "mime_type", "file_size", "ai_is_valid", "ai_confidence", "ai_feedback", "ai_analyzed_at"]
+      },
+      "branches": {
+        "Role": "Réseau des 24 agences BTS régionales",
+        "Key_Fields": ["id", "code", "name", "governorate", "address", "latitude", "longitude", "phone", "email", "is_active"]
+      },
+      "appointments": {
+        "Role": "Rendez-vous physiques en agence",
+        "Key_Fields": ["id", "credit_application_id", "branch_id", "staff_user_id", "scheduled_at", "status [PROPOSED, CONFIRMED, COMPLETED, CANCELLED]", "notes"]
+      },
+      "report_messages": {
+        "Role": "Messagerie instantanée sur dossier litigieux ou incomplet",
+        "Key_Fields": ["id", "credit_application_id", "sender_type [user | staff]", "sender_id", "message", "attachment_path", "is_read", "created_at"]
+      },
+      "app_notifications": {
+        "Role": "Notifications temps réel et alertes d'état",
+        "Key_Fields": ["id", "user_id", "type", "title", "body", "read_at", "action_url"]
+      },
+      "audit_logs": {
+        "Role": "Journal immuable d'audit et de conformité",
+        "Key_Fields": ["id", "credit_application_id", "actor_type", "actor_id", "action", "old_status", "new_status", "ip_address", "created_at"]
+      }
+    },
+    "Realtime_WebSockets_Channels": {
+      "Server": "Laravel Reverb (Port 8080/6001, Pusher Protocol)",
+      "Channels": {
+        "Application_Chat": "private-application.{application_id} (Diffusion instantanée des messages)",
+        "User_Notifications": "private-user.{user_id} (Alertes d'avancement de statut)",
+        "Agency_Queue": "private-branch.{branch_id} (Notifications d'assignation pour les agents staff)"
+      }
+    },
+    "How_To_Run_and_Operate": {
+      "Prerequisites": {
+        "MySQL": "Démarrer MySQL (Port 3306) avec la base de données 'bts_php_backend'",
+        "Node_and_PHP": "PHP 8.2+ et Node.js 20+ installés"
+      },
+      "Start_Terminals": {
+        "Terminal_1_Backend_API": "cd backend && php artisan serve --host 127.0.0.1 --port 8000",
+        "Terminal_2_Client_Portal": "cd client && npm run dev (Disponible sur http://localhost:3000)",
+        "Terminal_3_Staff_Portal": "cd staff && npm run dev (Disponible sur http://localhost:3001)",
+        "Terminal_4_Admin_Portal": "cd admin && npm run dev (Disponible sur http://localhost:3002)",
+        "Terminal_5_WebSockets": "cd backend && php artisan reverb:start (Port 8080/6001)"
+      },
+      "Essential_CLI_Commands": {
+        "Run_Migrations_and_Seeders": "cd backend && php artisan migrate:fresh --seed",
+        "Create_Staff_Agent": "cd backend && php artisan staff:make staff@btsbank.tn --first-name=Ahmed --last-name='Ben Salah' --role=staff --password=secret123",
+        "Create_Admin_User": "cd backend && php artisan staff:make admin@btsbank.tn --first-name=Direction --last-name=BTS --role=admin --password=secret123",
+        "Run_Backend_Tests": "cd backend && php artisan test",
+        "Run_E2E_Tests": "npx playwright test"
+      }
+    }
+  }
+}

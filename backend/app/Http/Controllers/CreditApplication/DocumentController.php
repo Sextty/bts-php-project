@@ -2,24 +2,30 @@
 
 namespace App\Http\Controllers\CreditApplication;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreditApplication\UploadDocumentRequest;
 use App\Http\Resources\DocumentResource;
+use App\Http\Responses\ApiResponse;
 use App\Models\CreditApplication;
 use App\Models\Document;
 use App\Services\AuditLogService;
 use App\Services\CreditApplicationService;
+use App\Services\DocumentStorage\DocumentStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
     public function __construct(
         private readonly CreditApplicationService $applications,
         private readonly AuditLogService $auditLog,
+        private readonly DocumentStorage $storage,
     ) {}
 
     public function store(UploadDocumentRequest $request, CreditApplication $application): JsonResponse
@@ -27,32 +33,67 @@ class DocumentController extends Controller
         $this->applications->assertEditable($application);
 
         $file = $request->file('file');
-        // Store under a generated name, never the customer-supplied original filename — avoids
-        // path traversal / collisions; original_filename is kept separately for display/download.
-        $storedName = (string) Str::uuid().'.'.$file->getClientOriginalExtension();
-        $path = $file->storeAs('application-'.$application->id, $storedName, 'documents');
+        // The storage layer sniffs the real content (finfo), validates it against the MIME
+        // allowlist, and generates the stored name itself — a UUID + the extension that matches
+        // the actual bytes, never the customer-supplied original filename (path traversal /
+        // spoofed-extension defence). original_filename is kept separately for display/download.
+        $path = $this->storage->store($application, $file);
 
-        $document = $application->documents()->create([
-            'document_type' => $request->string('document_type'),
-            'original_filename' => $file->getClientOriginalName(),
-            'disk_path' => $path,
-            'mime_type' => $file->getMimeType(),
-            'size_bytes' => $file->getSize(),
-        ]);
+        try {
+            $document = DB::transaction(function () use ($application, $request, $file, $path) {
+                $document = $application->documents()->create([
+                    'document_type' => $request->string('document_type'),
+                    'original_filename' => $file->getClientOriginalName(),
+                    'disk_path' => $path,
+                    'mime_type' => $file->getMimeType(),
+                    'size_bytes' => $file->getSize(),
+                ]);
 
-        $this->auditLog->log(
-            'credit_application.document_uploaded',
-            $application->user,
-            newState: ['document_type' => $document->document_type, 'document_id' => $document->id],
-            ipAddress: $request->ip(),
-            userAgent: $request->userAgent(),
-            application: $application,
+                $this->auditLog->log(
+                    'credit_application.document_uploaded',
+                    $application->user,
+                    newState: ['document_type' => $document->document_type, 'document_id' => $document->id],
+                    ipAddress: $request->ip(),
+                    userAgent: $request->userAgent(),
+                    application: $application,
+                );
+
+                return $document;
+            });
+        } catch (\Throwable $e) {
+            // Compensation: the file was already written to storage; if the DB row (or its audit
+            // trail) can't be committed, the file must not be left orphaned on the disk.
+            $this->storage->delete($path);
+            Log::error('[documents] upload failed, stored file removed', [
+                'application_id' => $application->id,
+                'path' => $path,
+                'exception' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+
+        return ApiResponse::created(['document' => new DocumentResource($document)]);
+    }
+
+    /**
+     * Authorized download for the application's own customer. Authorization happens here
+     * (ownership policy + application/document match) — the file itself lives on a private
+     * disk with no public URL, and the response streams through the API.
+     */
+    public function download(Request $request, CreditApplication $application, Document $document): BinaryFileResponse|StreamedResponse
+    {
+        $this->authorize('view', $application);
+
+        if ($document->credit_application_id !== $application->id || $document->trashed()) {
+            throw new ApiException(ApiErrorCode::DocumentNotFound);
+        }
+
+        return $this->storage->response(
+            $document->disk_path,
+            $document->original_filename,
+            $document->mime_type,
         );
-
-        return response()->json([
-            'success' => true,
-            'data' => ['document' => new DocumentResource($document)],
-        ], 201);
     }
 
     public function destroy(Request $request, CreditApplication $application, Document $document): JsonResponse
@@ -60,12 +101,12 @@ class DocumentController extends Controller
         $this->authorize('update', $application);
 
         if ($document->credit_application_id !== $application->id) {
-            throw new ApiException('DOCUMENT_NOT_FOUND', 'Document not found.', status: 404);
+            throw new ApiException(ApiErrorCode::DocumentNotFound);
         }
 
         $this->applications->assertEditable($application);
 
-        Storage::disk('documents')->delete($document->disk_path);
+        $this->storage->delete($document->disk_path);
         $document->delete();
 
         $this->auditLog->log(
@@ -77,6 +118,6 @@ class DocumentController extends Controller
             application: $application,
         );
 
-        return response()->json(['success' => true, 'data' => null]);
+        return ApiResponse::noContent();
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Models\Client;
 use App\Models\CreditApplication;
@@ -20,25 +21,30 @@ class CreditApplicationService
     public function __construct(
         private readonly AuditLogService $auditLog,
         private readonly ApplicationNumberService $numberService,
+        private readonly CreditApplicationStateMachine $stateMachine,
+        private readonly BranchMatchingService $branchMatching,
+        private readonly NotificationService $notifications,
     ) {}
 
     public function create(User $user, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
-        $application = CreditApplication::create([
-            'user_id' => $user->id,
-            'status' => CreditApplication::STATUS_DRAFT,
-        ]);
+        return DB::transaction(function () use ($user, $ip, $userAgent) {
+            $application = CreditApplication::create([
+                'user_id' => $user->id,
+                'status' => CreditApplication::STATUS_DRAFT,
+            ]);
 
-        $this->auditLog->log(
-            'credit_application.created',
-            $user,
-            newState: ['status' => CreditApplication::STATUS_DRAFT],
-            ipAddress: $ip,
-            userAgent: $userAgent,
-            application: $application,
-        );
+            $this->auditLog->log(
+                'credit_application.created',
+                $user,
+                newState: ['status' => CreditApplication::STATUS_DRAFT],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $application,
+            );
 
-        return $application;
+            return $application;
+        });
     }
 
     /**
@@ -49,113 +55,221 @@ class CreditApplicationService
     public function assertEditable(CreditApplication $application): void
     {
         if ($application->isLocked()) {
-            throw new ApiException(
-                'APPLICATION_LOCKED',
-                'This application has been finalized and can no longer be modified.',
-                status: 403,
-            );
+            throw new ApiException(ApiErrorCode::ApplicationLocked);
         }
     }
 
-    public function saveClient(CreditApplication $application, array $data, ?string $ip = null, ?string $userAgent = null): Client
+    public function saveClient(CreditApplication $application, array $data, User $actor, ?string $ip = null, ?string $userAgent = null): Client
     {
         $this->assertEditable($application);
-
-        $existing = $application->client;
 
         // The customer never supplies code_client — it's assigned once, on first save of this
         // step, and never regenerated on subsequent edits. Same pattern as n_demande on Étape 2.
-        if (! $existing || ! $existing->code_client) {
-            $data['code_client'] = $this->numberService->generate('CL');
-        }
+        return DB::transaction(function () use ($application, $data, $actor, $ip, $userAgent) {
+            $existing = $application->client;
 
-        $client = $application->client()->updateOrCreate(['credit_application_id' => $application->id], $data);
+            if (! $existing || ! $existing->code_client) {
+                $data['code_client'] = $this->numberService->generate('CL');
+            }
 
-        $this->bumpStatus($application, CreditApplication::STATUS_STEP_1_COMPLETED);
+            $client = $application->client()->updateOrCreate(['credit_application_id' => $application->id], $data);
 
-        $this->auditLog->log('credit_application.client_saved', $application->user, newState: ['step' => 1], ipAddress: $ip, userAgent: $userAgent, application: $application);
+            $this->bumpStatus($application, CreditApplication::STATUS_STEP_1_COMPLETED, $actor, $ip, $userAgent);
 
-        return $client;
+            $this->auditLog->log('credit_application.client_saved', $application->user, newState: ['step' => 1], ipAddress: $ip, userAgent: $userAgent, application: $application);
+
+            return $client;
+        });
     }
 
-    public function saveCreditRequest(CreditApplication $application, array $data, ?string $ip = null, ?string $userAgent = null): CreditRequest
+    public function saveCreditRequest(CreditApplication $application, array $data, User $actor, ?string $ip = null, ?string $userAgent = null): CreditRequest
     {
         $this->assertEditable($application);
 
-        $existing = $application->creditRequest;
+        // The customer never supplies n_demande or identifiant_personne — n_demande is
+        // server-generated (ApplicationNumberService), and identifiant_personne is derived from
+        // the client's code_client. Any client-supplied values for these fields are ignored.
+        return DB::transaction(function () use ($application, $data, $actor, $ip, $userAgent) {
+            $existing = $application->creditRequest;
 
-        // The customer never supplies n_demande — it's assigned once, on first save of this
-        // step, and never regenerated on subsequent edits.
-        if (! $existing || ! $existing->n_demande) {
-            $data['n_demande'] = $this->numberService->generate();
-        }
+            if (! $existing || ! $existing->n_demande) {
+                $data['n_demande'] = $this->numberService->generate();
+            }
+
+        // nom_ou_rs and prenom_ou_dc must always match the client's canonical nom/prénom
+        // established in Step 1. Any client-supplied values for these fields are ignored.
+        $data['nom_ou_rs'] = $application->client?->nom ?? $data['nom_ou_rs'] ?? null;
+        $data['prenom_ou_dc'] = $application->client?->prenom ?? $data['prenom_ou_dc'] ?? null;
+
+        // identifiant_personne is always derived from the client's code_client — the
+        // customer must never supply or override it.
+        $data['identifiant_personne'] = $application->client?->code_client ?? $data['identifiant_personne'] ?? null;
 
         $creditRequest = $application->creditRequest()->updateOrCreate(['credit_application_id' => $application->id], $data);
 
-        $this->bumpStatus($application, CreditApplication::STATUS_STEP_2_COMPLETED);
+            $this->bumpStatus($application, CreditApplication::STATUS_STEP_2_COMPLETED, $actor, $ip, $userAgent);
 
-        $this->auditLog->log('credit_application.credit_request_saved', $application->user, newState: ['step' => 2, 'n_demande' => $creditRequest->n_demande], ipAddress: $ip, userAgent: $userAgent, application: $application);
+            $this->auditLog->log('credit_application.credit_request_saved', $application->user, newState: ['step' => 2, 'n_demande' => $creditRequest->n_demande], ipAddress: $ip, userAgent: $userAgent, application: $application);
 
-        return $creditRequest;
+            return $creditRequest;
+        });
     }
 
-    public function saveProject(CreditApplication $application, array $data, ?string $ip = null, ?string $userAgent = null): Project
+    public function saveProject(CreditApplication $application, array $data, User $actor, ?string $ip = null, ?string $userAgent = null): Project
     {
         $this->assertEditable($application);
 
+        // code_projet is server-generated on first save and never regenerated on subsequent
+        // edits. identifiant_personne is derived from the client's code_client. Any
+        // client-supplied values for these fields are ignored.
+        return DB::transaction(function () use ($application, $data, $actor, $ip, $userAgent) {
+            $existing = $application->project;
+
+            if (! $existing || ! $existing->code_projet) {
+                $data['code_projet'] = $this->numberService->generate('PJ');
+            }
+
+        // nom_ou_rs and prenom_ou_dc must always match the client's canonical nom/prénom
+        // established in Step 1. Any client-supplied values for these fields are ignored.
+        $data['nom_ou_rs'] = $application->client?->nom ?? $data['nom_ou_rs'] ?? null;
+        $data['prenom_ou_dc'] = $application->client?->prenom ?? $data['prenom_ou_dc'] ?? null;
+
+        // identifiant_personne is always derived from the client's code_client — the
+        // customer must never supply or override it.
+        $data['identifiant_personne'] = $application->client?->code_client ?? $data['identifiant_personne'] ?? null;
+
+        if (empty($data['localisation'])) {
+            $data['localisation'] = $data['delegation'] ?? $data['ville'] ?? 'Tunisie';
+        }
+        if (!isset($data['financement']) || $data['financement'] === '' || $data['financement'] === null) {
+            $data['financement'] = max(0, (float)($data['cout'] ?? 0) - (float)($data['investissement_personnel'] ?? 0));
+        }
+
         $project = $application->project()->updateOrCreate(['credit_application_id' => $application->id], $data);
 
-        $this->bumpStatus($application, CreditApplication::STATUS_STEP_3_COMPLETED);
-        $this->bumpStatus($application, CreditApplication::STATUS_READY_FOR_VALIDATION_1);
+            $this->bumpStatus($application, CreditApplication::STATUS_STEP_3_COMPLETED, $actor, $ip, $userAgent);
+            $this->bumpStatus($application, CreditApplication::STATUS_READY_FOR_VALIDATION_1, $actor, $ip, $userAgent);
 
-        $this->auditLog->log('credit_application.project_saved', $application->user, newState: ['step' => 3], ipAddress: $ip, userAgent: $userAgent, application: $application);
+            $this->auditLog->log('credit_application.project_saved', $application->user, newState: ['step' => 3, 'code_projet' => $project->code_projet], ipAddress: $ip, userAgent: $userAgent, application: $application);
 
-        return $project;
+            return $project;
+        });
     }
 
     /**
      * Validation-2 is the customer's final confirmation. Per the spec, "After Validation 2:
-     * FINAL LOCK" describes no separate action in between — so this method performs both
-     * transitions atomically and audit-logs each one.
+     * FINAL LOCK" describes no separate action in between — so this method performs all three
+     * transitions atomically: VALIDATION_2 → FINAL_LOCKED → SUBMITTED, audit-logs each one,
+     * and auto-submits the application so it immediately enters the staff review pipeline.
      */
-    public function confirmValidationTwoAndLock(CreditApplication $application, ?string $ip = null, ?string $userAgent = null): CreditApplication
+    public function confirmValidationTwoAndLock(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
         if ($application->status !== CreditApplication::STATUS_VALIDATION_1_COMPLETED) {
-            throw new ApiException('VALIDATION_1_REQUIRED', 'Validation 1 must pass before validation 2.', status: 409);
+            throw new ApiException(ApiErrorCode::Validation1Required);
         }
 
-        DB::transaction(function () use ($application, $ip, $userAgent) {
-            $application->update(['status' => CreditApplication::STATUS_VALIDATION_2]);
+        DB::transaction(function () use ($application, $actor, $ip, $userAgent) {
+            $this->stateMachine->apply($application, CreditApplication::STATUS_VALIDATION_2, $actor, ip: $ip, userAgent: $userAgent);
             $this->auditLog->log('credit_application.validation_2_confirmed', $application->user, previousState: ['status' => CreditApplication::STATUS_VALIDATION_1_COMPLETED], newState: ['status' => CreditApplication::STATUS_VALIDATION_2], ipAddress: $ip, userAgent: $userAgent, application: $application);
 
-            $application->update(['status' => CreditApplication::STATUS_FINAL_LOCKED]);
+            $this->stateMachine->apply($application, CreditApplication::STATUS_FINAL_LOCKED, $actor, ip: $ip, userAgent: $userAgent);
             $this->auditLog->log('credit_application.final_locked', $application->user, previousState: ['status' => CreditApplication::STATUS_VALIDATION_2], newState: ['status' => CreditApplication::STATUS_FINAL_LOCKED], ipAddress: $ip, userAgent: $userAgent, application: $application);
+
+            $this->submitCore($application, $actor, $ip, $userAgent);
         });
 
         return $application->fresh();
     }
 
-    public function submit(CreditApplication $application, ?string $ip = null, ?string $userAgent = null): CreditApplication
+    public function submit(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
         if ($application->status !== CreditApplication::STATUS_FINAL_LOCKED) {
-            throw new ApiException('APPLICATION_NOT_LOCKED', 'The application must be finalized before it can be submitted.', status: 409);
+            throw new ApiException(ApiErrorCode::ApplicationNotLocked);
         }
 
-        $application->update([
-            'status' => CreditApplication::STATUS_SUBMITTED,
-            'submitted_at' => now(),
-        ]);
+        return DB::transaction(function () use ($application, $actor, $ip, $userAgent) {
+            $this->submitCore($application, $actor, $ip, $userAgent);
+
+            return $application->fresh();
+        });
+    }
+
+    /**
+     * Core submission logic shared by submit() (explicit customer action) and
+     * confirmValidationTwoAndLock() (auto-submit after validation-2). Must be called
+     * inside an existing DB transaction — never starts its own.
+     *
+     * Sets submitted_at, routes to a branch, transitions FINAL_LOCKED → SUBMITTED,
+     * audit-logs the submission, and notifies staff.
+     */
+    private function submitCore(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): void
+    {
+        $attributes = ['submitted_at' => now()];
+
+        // Route the application to its branch the moment it enters the staff pipeline, so
+        // branch-isolated staff can be scoped with a plain column comparison. Best-effort: when
+        // no branch is configured the application stays unassigned (visible only to unassigned
+        // staff and admins), and adminApprove still surfaces NO_BRANCH_AVAILABLE as before.
+        try {
+            $attributes['branch_id'] = $this->branchMatching->findForApplication($application)->id;
+        } catch (ApiException $e) {
+            if ($e->errorCode !== ApiErrorCode::NoBranchAvailable->value) {
+                throw $e;
+            }
+        }
+
+        $this->stateMachine->apply(
+            $application,
+            CreditApplication::STATUS_SUBMITTED,
+            $actor,
+            attributes: $attributes,
+            ip: $ip,
+            userAgent: $userAgent,
+        );
 
         $this->auditLog->log('credit_application.submitted', $application->user, previousState: ['status' => CreditApplication::STATUS_FINAL_LOCKED], newState: ['status' => CreditApplication::STATUS_SUBMITTED], ipAddress: $ip, userAgent: $userAgent, application: $application);
 
-        return $application->fresh();
+        $this->notifications->notifyStaff(
+            'application.submitted',
+            'New application submitted',
+            'Application '.$application->application_number.' has been submitted and is waiting for review.',
+            ['application_id' => $application->id, 'application_number' => $application->application_number, 'branch_id' => $application->branch_id],
+            dedupeKey: 'application-submitted-'.$application->id,
+        );
+    }
+
+    /**
+     * Cancels an application the customer still owns the draft zone of (DRAFT up to and
+     * including VALIDATION_2 — the state machine rejects anything later). Cancellation is
+     * terminal: every transition out of CANCELLED is impossible, and the model's isLocked()
+     * already makes a cancelled application read-only to its owner.
+     */
+    public function cancel(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): CreditApplication
+    {
+        return DB::transaction(function () use ($application, $actor, $ip, $userAgent) {
+            $previous = $application->status;
+
+            $this->stateMachine->apply($application, CreditApplication::STATUS_CANCELLED, $actor, ip: $ip, userAgent: $userAgent);
+
+            // Mark any existing appointments as cancelled so their slots become available immediately.
+            $application->appointments()
+                ->whereNotIn('status', [\App\Models\Appointment::STATUS_REJECTED, \App\Models\Appointment::STATUS_CANCELLED])
+                ->update([
+                    'status' => \App\Models\Appointment::STATUS_CANCELLED,
+                    'decided_at' => now(),
+                ]);
+
+            $this->auditLog->log('credit_application.cancelled', $application->user, previousState: ['status' => $previous], newState: ['status' => CreditApplication::STATUS_CANCELLED], ipAddress: $ip, userAgent: $userAgent, application: $application);
+
+            return $application->fresh();
+        });
     }
 
     /** Moves status forward to $target only if that's further than where it already is. */
-    private function bumpStatus(CreditApplication $application, string $target): void
+    private function bumpStatus(CreditApplication $application, string $target, User $actor, ?string $ip = null, ?string $userAgent = null): void
     {
         if (! $application->hasReached($target)) {
-            $application->update(['status' => $target]);
+            $this->stateMachine->apply($application, $target, $actor, ip: $ip, userAgent: $userAgent);
         }
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Staff;
 
 use App\Http\Controllers\Controller;
+use App\Http\Responses\ApiResponse;
 use App\Services\DashboardStatsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,9 +22,6 @@ class DashboardController extends Controller
         $days = (int) $request->query('days', 30);
         $days = max(7, min($days, 90));
 
-        return response()->json([
-            'success' => true,
-            'data' => $this->stats->build($days),
-        ]);
+        return ApiResponse::ok($this->stats->build($days));
     }
 }

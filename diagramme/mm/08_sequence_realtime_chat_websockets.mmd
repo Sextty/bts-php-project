@@ -1,0 +1,82 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E0F2FE',
+    'primaryTextColor': '#0F172A',
+    'primaryBorderColor': '#0284C7',
+    'lineColor': '#0284C7',
+    'secondaryColor': '#FEF3C7',
+    'tertiaryColor': '#F1F5F9',
+    'signalColor': '#0369A1',
+    'signalTextColor': '#0F172A',
+    'labelBoxBkgColor': '#E2E8F0',
+    'labelBoxBorderColor': '#94A3B8',
+    'labelTextColor': '#0F172A',
+    'loopTextColor': '#0F172A',
+    'noteBorderColor': '#0284C7',
+    'noteBkgColor': '#F0FDF4',
+    'noteTextColor': '#14532D',
+    'activationBorderColor': '#0284C7',
+    'activationBkgColor': '#BAE6FD',
+    'sequenceNumberColor': '#FFFFFF',
+    'actorBkg': '#E0F2FE',
+    'actorBorder': '#0284C7',
+    'actorTextColor': '#0F172A',
+    'actorLineColor': '#94A3B8'
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    box rgb(227,242,253) Client Side
+        actor Client as "Client (App Client 3000)"
+        participant EchoClient as "Laravel Echo (Client)"
+    end
+
+    box rgb(255,243,224) Staff Side
+        actor Staff as "Agent Staff (App Staff 3001)"
+        participant EchoStaff as "Laravel Echo (Staff)"
+    end
+
+    box rgb(224,242,241) Real-Time Infrastructure
+        participant API as "Laravel API Gateway"
+        participant Reverb as "Laravel Reverb WebSocket Server"
+    end
+
+    box rgb(236,239,241) Data Layer
+        participant DB as "MySQL Database"
+    end
+
+    %% 1. Channel Setup
+    rect rgb(224, 247, 250)
+        note over Client, Staff: 1. Channel Setup & Authorization
+        Client->>EchoClient: Subscribe to private channel 'credit-application.{id}'
+        EchoClient->>API: POST /broadcasting/auth (Bearer Token Sanctum)
+        API-->>EchoClient: Channel Authorized
+        Staff->>EchoStaff: Subscribe to private channel 'credit-application.{id}'
+        EchoStaff->>API: POST /broadcasting/auth (Staff Bearer Token)
+        API-->>EchoStaff: Channel Authorized
+        note over Client, Staff: WebSocket Private Channel Established
+    end
+
+    %% 2. Client sends message to Staff
+    rect rgb(227, 242, 253)
+        note over Client, Staff: 2. Client sends message to Staff
+        Client->>API: POST /api/applications/{id}/report/messages { message: 'Bonjour...' }
+        API->>DB: INSERT report_messages (sender_type: 'user')
+        API->>Reverb: Broadcast 'ReportMessageSent'
+        API-->>Client: HTTP 201 { message_id, status: 'SENT' }
+        Reverb-->>EchoStaff: Push WebSocket payload
+        EchoStaff->>Staff: Display message instantly in chat UI
+    end
+
+    %% 3. Staff replies to Client
+    rect rgb(255, 243, 224)
+        note over Client, Staff: 3. Staff replies to Client
+        Staff->>API: POST /api/staff/applications/{id}/report/messages { message: 'Veuillez joindre...' }
+        API->>DB: INSERT report_messages (sender_type: 'staff')
+        API->>Reverb: Broadcast 'ReportMessageSent'
+        API-->>Staff: HTTP 201 { message_id, status: 'SENT' }
+        Reverb-->>EchoClient: Push WebSocket payload
+        EchoClient->>Client: Play notification sound & display message live
+    end

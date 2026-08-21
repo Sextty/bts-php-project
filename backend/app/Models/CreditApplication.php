@@ -47,6 +47,8 @@ class CreditApplication extends Model
 
     public const STATUS_APPOINTMENT_LOCKED = 'APPOINTMENT_LOCKED';
 
+    public const STATUS_CANCELLED = 'CANCELLED';
+
     /**
      * Order matters: index = how far the application has progressed. STAFF_REJECTED/REJECTED
      * are branch endpoints rather than "further along" in a strict sense, but their exact
@@ -72,6 +74,10 @@ class CreditApplication extends Model
         self::STATUS_APPOINTMENT_PROPOSED,
         self::STATUS_APPOINTMENT_CONFIRMED,
         self::STATUS_APPOINTMENT_LOCKED,
+        // A cancellation is a terminal branch of the customer zone (never reachable after
+        // FINAL_LOCKED), appended at the end like the other branch endpoints so the ordering of
+        // the progression statuses stays untouched.
+        self::STATUS_CANCELLED,
     ];
 
     protected $fillable = [
@@ -81,18 +87,57 @@ class CreditApplication extends Model
         'rejection_reason',
         'decided_by_staff_user_id',
         'decided_by_admin_user_id',
+        'branch_id',
+        'report_closed_at',
+        'report_closed_by_staff_id',
+        'report_closed_reason',
     ];
 
     protected function casts(): array
     {
         return [
             'submitted_at' => 'datetime',
+            'report_closed_at' => 'datetime',
         ];
+    }
+
+    public function reportClosedByStaff(): BelongsTo
+    {
+        return $this->belongsTo(StaffUser::class, 'report_closed_by_staff_id');
+    }
+
+    public function isReportClosed(): bool
+    {
+        return $this->report_closed_at !== null;
     }
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * The branch this application is routed to, set at submission time (CreditApplicationService
+     * persists BranchMatchingService's result). The column is the basis of branch isolation:
+     * branch-assigned staff see only applications whose branch_id matches their own.
+     */
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
+    }
+
+    /**
+     * The staff-facing list scope. Branch-assigned (non-superuser) staff only ever get rows
+     * routed to their branch; everyone else is unfiltered. Uses a scope so every staff list —
+     * review queue, report inbox — inherits the same rule by construction.
+     */
+    public function scopeAccessibleToStaff($query, StaffUser $staff)
+    {
+        if (! $staff->isBranchRestricted()) {
+            return $query;
+        }
+
+        return $query->where('branch_id', $staff->branch_id);
     }
 
     public function decidedByStaffUser(): BelongsTo
@@ -162,5 +207,27 @@ class CreditApplication extends Model
     public function hasReached(string $threshold): bool
     {
         return array_search($this->status, self::STATUS_ORDER, true) >= array_search($threshold, self::STATUS_ORDER, true);
+    }
+
+    /**
+     * True once the report chat is open — for confirmed appointments, locked appointments,
+     * cancellations, or any application with active dialogue.
+     */
+    public function isReportOpen(): bool
+    {
+        return $this->isCancelled()
+            || in_array($this->status, [
+                self::STATUS_STAFF_APPROVED,
+                self::STATUS_APPROVED,
+                self::STATUS_APPOINTMENT_PROPOSED,
+                self::STATUS_APPOINTMENT_CONFIRMED,
+                self::STATUS_APPOINTMENT_LOCKED,
+            ], true)
+            || $this->reportMessages()->exists();
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
     }
 }

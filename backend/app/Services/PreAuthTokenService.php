@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ApiErrorCode;
 use App\Exceptions\ApiException;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
@@ -31,12 +32,12 @@ class PreAuthTokenService
         $payload = Cache::get($this->key($token));
 
         if (! $payload || $payload['purpose'] !== $purpose) {
-            throw new ApiException('INVALID_TOKEN', 'This session has expired. Please start again.', status: 401);
+            throw new ApiException(ApiErrorCode::InvalidToken);
         }
 
         $user = User::find($payload['user_id']);
         if (! $user) {
-            throw new ApiException('INVALID_TOKEN', 'This session has expired. Please start again.', status: 401);
+            throw new ApiException(ApiErrorCode::InvalidToken);
         }
 
         return $user;

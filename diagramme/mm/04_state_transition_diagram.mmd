@@ -1,0 +1,108 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#E3F2FD',
+    'edgeLabelBackground': '#ffffff',
+    'tertiaryColor': '#FAFAFA',
+    'fontFamily': 'Inter, system-ui, sans-serif',
+    'fontSize': '13px'
+  }
+}}%%
+stateDiagram-v2
+    %% ----------------------------------------------------
+    %% BTS BANK - CREDIT APPLICATION LIFECYCLE STATE DIAGRAM
+    %% ----------------------------------------------------
+
+    classDef draftState fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef submittedState fill:#FFF8E1,stroke:#F57F17,stroke-width:2px,color:#E65100
+    classDef staffState fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C
+    classDef adminState fill:#EDE7F6,stroke:#4527A0,stroke-width:2px,color:#311B92
+    classDef approvedState fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef rejectedState fill:#FFEBEE,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    classDef closedState fill:#E0F2F1,stroke:#00695C,stroke-width:2px,color:#004D40
+
+    [*] --> DRAFT : Creation d'une nouvelle demande
+
+    state DRAFT {
+        [*] --> STEP_1_CLIENT : Saisie infos personnelles
+        STEP_1_CLIENT --> STEP_2_CREDIT : Validation identite et profil
+        STEP_2_CREDIT --> STEP_3_PROJECT : Choix montant, duree et agence
+        STEP_3_PROJECT --> STEP_4_DOCS : Description projet d'entreprise
+        STEP_4_DOCS --> AI_VERIFICATION : Televersement pieces justificatives
+        AI_VERIFICATION --> READY_TO_SUBMIT : Analyse Google Gemini OCR (Score et Alertes)
+    }
+
+    note right of DRAFT
+        Edition dynamique du dossier
+        Sauvegarde automatique en brouillon
+        Verification IA instantanee des pieces
+    end note
+
+    DRAFT --> SUBMITTED : Client clique Soumettre
+
+    note right of SUBMITTED
+        Dossier verrouille (is_locked = true)
+        Numero unique genere : BTS-YYYY-XXXX
+        Affectation automatique a l'agence regionale
+    end note
+
+    SUBMITTED --> UNDER_STAFF_REVIEW : Agent agence ouvre le dossier
+
+    state UNDER_STAFF_REVIEW {
+        [*] --> VERIFY_DOCS : Controle conformite pieces
+        VERIFY_DOCS --> VERIFY_FINANCIALS : Analyse viabilite et capacite de remboursement
+    }
+
+    note right of UNDER_STAFF_REVIEW
+        Instruction Niveau 1 (Staff Agence)
+        Messagerie temps reel avec le client
+    end note
+
+    UNDER_STAFF_REVIEW --> STAFF_REJECTED : Rejet L1 (Motif obligatoire)
+    UNDER_STAFF_REVIEW --> STAFF_APPROVED : Validation L1 par Staff
+
+    note right of STAFF_REJECTED
+        Notification SMS/Email au client
+        Motif de rejet consigne dans l'audit
+    end note
+
+    STAFF_APPROVED --> UNDER_ADMIN_REVIEW : Transmis a la Direction
+
+    note right of UNDER_ADMIN_REVIEW
+        Instruction Niveau 2 (Direction / Comite Risques)
+        Validation souveraine de l'octroi
+    end note
+
+    UNDER_ADMIN_REVIEW --> ADMIN_REJECTED : Rejet definitif L2
+    UNDER_ADMIN_REVIEW --> ADMIN_APPROVED : Approbation finale L2
+
+    note right of ADMIN_REJECTED
+        Rejet final notifie au demandeur
+        Dossier classe sans suite
+    end note
+
+    state ADMIN_APPROVED {
+        [*] --> APPOINTMENT_PROPOSED : Declenchement automatique creneau RDV
+        APPOINTMENT_PROPOSED --> APPOINTMENT_CONFIRMED : Client valide la date et heure
+        APPOINTMENT_CONFIRMED --> IN_BRANCH_MEETING : Entretien en agence et levee des reserves
+    }
+
+    IN_BRANCH_MEETING --> CONTRACT_SIGNED : Signature convention et Deblocage des fonds
+    CONTRACT_SIGNED --> CLOSED : Dossier cloture
+
+    note right of CLOSED
+        Fonds verses au beneficiaire
+        Archivage securise et Audit log complet
+    end note
+
+    STAFF_REJECTED --> [*]
+    ADMIN_REJECTED --> [*]
+    CLOSED --> [*]
+
+    class DRAFT, STEP_1_CLIENT, STEP_2_CREDIT, STEP_3_PROJECT, STEP_4_DOCS, AI_VERIFICATION, READY_TO_SUBMIT draftState
+    class SUBMITTED submittedState
+    class UNDER_STAFF_REVIEW, VERIFY_DOCS, VERIFY_FINANCIALS staffState
+    class UNDER_ADMIN_REVIEW adminState
+    class STAFF_APPROVED, ADMIN_APPROVED, APPOINTMENT_PROPOSED, APPOINTMENT_CONFIRMED, IN_BRANCH_MEETING, CONTRACT_SIGNED approvedState
+    class STAFF_REJECTED, ADMIN_REJECTED rejectedState
+    class CLOSED closedState

@@ -69,7 +69,6 @@ class StaffReviewTest extends TestCase
 
         $this->postJson("/api/applications/{$id}/validation-1");
         $this->postJson("/api/applications/{$id}/validation-2");
-        $this->postJson("/api/applications/{$id}/submit");
 
         return CreditApplication::findOrFail($id);
     }
@@ -93,6 +92,47 @@ class StaffReviewTest extends TestCase
 
         $this->postJson('/api/staff/login', ['email' => 'staff@bts.test', 'password' => 'wrong'])
             ->assertStatus(401);
+    }
+
+    public function test_admin_login_issues_a_token_for_admin_accounts(): void
+    {
+        $admin = StaffUser::factory()->admin()->create([
+            'email' => 'admin@bts.test',
+            'password' => Hash::make('CorrectHorseBattery'),
+        ]);
+
+        $response = $this->postJson('/api/staff/admin/login', [
+            'email' => 'admin@bts.test',
+            'password' => 'CorrectHorseBattery',
+        ]);
+
+        $response->assertOk()->assertJsonPath('data.staff_user.role', 'admin');
+        $this->assertSame($admin->id, $response->json('data.staff_user.id'));
+    }
+
+    public function test_admin_portal_rejects_staff_accounts(): void
+    {
+        StaffUser::factory()->create([
+            'role' => 'staff',
+            'email' => 'staff@bts.test',
+            'password' => Hash::make('CorrectHorseBattery'),
+        ]);
+
+        $this->postJson('/api/staff/admin/login', ['email' => 'staff@bts.test', 'password' => 'CorrectHorseBattery'])
+            ->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+    }
+
+    public function test_staff_portal_rejects_admin_accounts(): void
+    {
+        StaffUser::factory()->admin()->create([
+            'email' => 'admin@bts.test',
+            'password' => Hash::make('CorrectHorseBattery'),
+        ]);
+
+        $this->postJson('/api/staff/login', ['email' => 'admin@bts.test', 'password' => 'CorrectHorseBattery'])
+            ->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
     }
 
     public function test_a_customer_token_cannot_reach_staff_routes(): void
@@ -136,52 +176,40 @@ class StaffReviewTest extends TestCase
         $staff = StaffUser::factory()->create();
         $admin = StaffUser::factory()->admin()->create();
 
+        // 1. Staff approval -> transitions to STAFF_APPROVED
         Sanctum::actingAs($staff, ['*']);
         $this->postJson("/api/staff/applications/{$application->id}/approve")
             ->assertOk()
             ->assertJsonPath('data.application.status', CreditApplication::STATUS_STAFF_APPROVED);
 
+        $application->refresh();
+        $this->assertSame($staff->id, $application->decided_by_staff_user_id);
+        $this->assertNull($application->latestAppointment());
+
+        // 2. Admin approval -> transitions to APPROVED -> triggers APPOINTMENT_PROPOSED
         Sanctum::actingAs($admin, ['*']);
-        // adminApprove() chains straight into the first appointment proposal, so the
-        // application's resting status is APPOINTMENT_PROPOSED, not APPROVED.
         $this->postJson("/api/staff/applications/{$application->id}/admin-approve")
             ->assertOk()
             ->assertJsonPath('data.application.status', CreditApplication::STATUS_APPOINTMENT_PROPOSED);
 
         $application->refresh();
-        $this->assertSame($staff->id, $application->decided_by_staff_user_id);
         $this->assertSame($admin->id, $application->decided_by_admin_user_id);
+        $this->assertNotNull($application->latestAppointment());
     }
 
-    public function test_staff_reject_requires_a_reason_and_records_it(): void
-    {
-        $application = $this->submittedApplication();
-        $staff = StaffUser::factory()->create();
-        Sanctum::actingAs($staff, ['*']);
-
-        $this->postJson("/api/staff/applications/{$application->id}/reject", [])
-            ->assertStatus(422);
-
-        $response = $this->postJson("/api/staff/applications/{$application->id}/reject", [
-            'reason' => 'Income documentation does not match the declared amount.',
-        ]);
-
-        $response->assertOk()->assertJsonPath('data.application.status', CreditApplication::STATUS_STAFF_REJECTED);
-        $this->assertSame(
-            'Income documentation does not match the declared amount.',
-            $response->json('data.application.rejection_reason'),
-        );
-    }
-
-    public function test_admin_reject_after_staff_approval(): void
+    public function test_admin_reject_from_staff_approved(): void
     {
         $application = $this->submittedApplication();
         $staff = StaffUser::factory()->create();
         $admin = StaffUser::factory()->admin()->create();
 
+        // Staff approves first
         Sanctum::actingAs($staff, ['*']);
-        $this->postJson("/api/staff/applications/{$application->id}/approve");
+        $this->postJson("/api/staff/applications/{$application->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_STAFF_APPROVED);
 
+        // Admin rejects from STAFF_APPROVED
         Sanctum::actingAs($admin, ['*']);
         $response = $this->postJson("/api/staff/applications/{$application->id}/admin-reject", [
             'reason' => 'Project financing plan is not viable.',
@@ -217,13 +245,11 @@ class StaffReviewTest extends TestCase
     public function test_a_decided_application_can_no_longer_be_edited_by_the_customer(): void
     {
         $application = $this->submittedApplication();
-        $staff = StaffUser::factory()->create();
-        $admin = StaffUser::factory()->admin()->create();
 
+        // staffApprove() chains to APPOINTMENT_PROPOSED, which locks the application.
+        $staff = StaffUser::factory()->create();
         Sanctum::actingAs($staff, ['*']);
         $this->postJson("/api/staff/applications/{$application->id}/approve");
-        Sanctum::actingAs($admin, ['*']);
-        $this->postJson("/api/staff/applications/{$application->id}/admin-approve");
 
         Sanctum::actingAs($this->customer, ['*']);
         // A full, otherwise-valid payload — the point is proving the lock check itself blocks

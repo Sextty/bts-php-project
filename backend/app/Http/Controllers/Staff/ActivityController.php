@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Staff;
 
 use App\Http\Controllers\Controller;
+use App\Http\Responses\ApiResponse;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,13 +24,10 @@ class ActivityController extends Controller
 
         $result = $this->activity->paginate($request->user(), $filters, $perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'logs' => $result['items'],
-                'meta' => $result['meta'],
-                'available_actions' => $this->activity->availableActions($request->user()),
-            ],
+        return ApiResponse::ok([
+            'logs' => $result['items'],
+            'meta' => $result['meta'],
+            'available_actions' => $this->activity->availableActions($request->user()),
         ]);
     }
 
@@ -38,9 +36,6 @@ class ActivityController extends Controller
         $days = (int) $request->query('days', 14);
         $days = max(7, min($days, 90));
 
-        return response()->json([
-            'success' => true,
-            'data' => $this->activity->traffic($request->user(), $days),
-        ]);
+        return ApiResponse::ok($this->activity->traffic($request->user(), $days));
     }
 }

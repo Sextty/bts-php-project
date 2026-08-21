@@ -1,0 +1,93 @@
+classDiagram
+    direction TB
+
+    class User {
+        +BigInteger id
+        +String email
+        +String phone
+        +creditApplications()
+    }
+
+    class StaffUser {
+        +BigInteger id
+        +BigInteger branch_id
+        +String role
+        +branch()
+    }
+
+    class CreditApplication {
+        +BigInteger id
+        +BigInteger user_id
+        +String application_number
+        +String status
+        +client()
+        +creditRequest()
+        +project()
+        +documents()
+    }
+
+    class Client {
+        +BigInteger id
+        +String full_name
+        +String cin_number
+    }
+
+    class CreditRequest {
+        +BigInteger id
+        +Decimal requested_amount
+        +String credit_type
+    }
+
+    class Project {
+        +BigInteger id
+        +String title
+        +Decimal total_investment
+    }
+
+    class Document {
+        +BigInteger id
+        +String document_type
+        +Boolean ai_is_valid
+    }
+
+    class Branch {
+        +BigInteger id
+        +String code
+        +String name
+    }
+
+    class Appointment {
+        +BigInteger id
+        +DateTime appointment_date
+        +String status
+    }
+
+    class CreditApplicationService {
+        +saveStep1Client()
+        +saveStep2Credit()
+        +saveStep3Project()
+        +submitApplication()
+    }
+
+    class DocumentVerificationService {
+        +verifyDocument()
+        +callGoogleGeminiAI()
+    }
+
+    class CreditApplicationReviewService {
+        +reviewByStaff()
+        +reviewByAdmin()
+    }
+
+    User "1" --> "*" CreditApplication
+    StaffUser "*" --> "1" Branch
+    CreditApplication "1" --> "1" Client
+    CreditApplication "1" --> "1" CreditRequest
+    CreditApplication "1" --> "1" Project
+    CreditApplication "1" --> "*" Document
+    CreditApplication "*" --> "1" Branch
+    CreditApplication "1" --> "0..1" Appointment
+
+    CreditApplicationService ..> CreditApplication
+    DocumentVerificationService ..> Document
+    CreditApplicationReviewService ..> CreditApplication
