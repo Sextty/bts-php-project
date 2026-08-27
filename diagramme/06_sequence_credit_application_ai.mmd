@@ -1,121 +1,72 @@
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#1E40AF',
-    'primaryTextColor': '#FFFFFF',
-    'primaryBorderColor': '#1E3A8A',
-    'lineColor': '#334155',
-    'secondaryColor': '#059669',
-    'tertiaryColor': '#F8FAFC',
-    'activationBorderColor': '#2563EB',
-    'activationBkgColor': '#DBEAFE',
-    'sequenceNumberColor': '#FFFFFF',
-    'actorBorder': '#1E3A8A',
-    'actorBkg': '#EFF6FF',
-    'actorTextColor': '#0F172A',
-    'actorLineColor': '#64748B',
-    'signalColor': '#1E293B',
-    'signalTextColor': '#0F172A',
-    'labelBoxBkgColor': '#F1F5F9',
-    'labelBoxBorderColor': '#94A3B8',
-    'labelTextColor': '#0F172A',
-    'loopTextColor': '#0F172A',
-    'noteBorderColor': '#CBD5E1',
-    'noteBkgColor': '#FEF3C7',
-    'noteTextColor': '#78350F'
-  }
-}}%%
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
 sequenceDiagram
     autonumber
+    actor C as Client
+    participant FE as Portail client
+    participant API as API Laravel 12
+    participant FLOW as Services dossier + machine d'etats
+    participant SEC as Controle document
+    participant AI as Verification IA consultative
+    participant DB as MariaDB
+    participant FS as Stockage prive
+    participant OUT as Outbox / notifications
 
-    %% ----------------------------------------------------
-    %% BTS BANK - SEQUENCE: CREDIT APPLICATION & AI VERIFY
-    %% ----------------------------------------------------
+    C->>FE: Cree une demande
+    FE->>API: POST /api/applications
+    API->>FLOW: create(user)
+    FLOW->>DB: credit_applications = DRAFT + audit
+    API-->>FE: Dossier cree
 
-    box rgb(239, 246, 255) "Client Interface"
-        actor User as "Client"
-        participant FE as "Client Portal"
+    C->>FE: Etape 1 - identite
+    FE->>API: PUT /api/applications/{id}/client
+    API->>FLOW: saveClient
+    FLOW->>DB: clients + code_client + STEP_1_COMPLETED
+
+    C->>FE: Etape 2 - besoin de credit
+    FE->>API: PUT /api/applications/{id}/credit
+    API->>FLOW: saveCreditRequest
+    FLOW->>DB: credit_requests + n_demande + STEP_2_COMPLETED
+
+    C->>FE: Etape 3 - projet et localisation
+    FE->>API: PUT /api/applications/{id}/project
+    API->>FLOW: saveProject
+    FLOW->>DB: projects + code_projet
+    FLOW->>DB: STEP_3_COMPLETED puis READY_FOR_VALIDATION_1
+
+    loop Chaque piece fournie
+        C->>FE: Selectionne un fichier et un type
+        FE->>API: POST /api/applications/{id}/documents
+        API->>SEC: Validation extension, MIME reel, taille + ClamAV
+        alt Infecte ou scanner requis indisponible
+            SEC-->>API: Rejet securise + audit
+            API-->>FE: Erreur, fichier non conserve
+        else Autorise
+            SEC->>FS: Stockage sous chemin UUID prive
+            API->>DB: documents + statut malware
+            API-->>FE: Metadonnees du document
+        end
     end
 
-    box rgb(240, 253, 244) "BTS Core Backend"
-        participant API as "Laravel API"
-        participant AI_Svc as "DocumentVerificationService"
+    C->>FE: Lance validation 1
+    FE->>API: POST /api/applications/{id}/validation-1
+    API->>FLOW: Verifie completude et contraintes
+    loop Documents compatibles avec l'analyse
+        FLOW->>FS: Lit le fichier autorise
+        FLOW->>AI: Envoie contenu + prompt structure
+        AI-->>FLOW: Verdict normalise, confiance, ecarts
+        FLOW->>DB: Champs ai_* + besoin de revue humaine
+    end
+    alt Erreurs metier ou documentaires
+        FLOW->>DB: validation_steps = failed
+        API-->>FE: Liste d'erreurs, dossier reste modifiable
+    else Validation reussie
+        FLOW->>DB: validation_steps = passed + VALIDATION_1_COMPLETED
+        FE->>API: POST /api/applications/{id}/validation-2
+        API->>FLOW: Confirme, verrouille et soumet atomiquement
+        FLOW->>DB: VALIDATION_2 -> FINAL_LOCKED -> SUBMITTED
+        FLOW->>DB: branch_id assigne si agence disponible + submitted_at + audits
+        FLOW->>OUT: application.submitted pour audience staff
+        API-->>FE: Dossier soumis et non editable
     end
 
-    box rgb(255, 241, 242) "External AI Service"
-        participant Gemini as "Google Gemini 1.5 API"
-    end
-
-    box rgb(248, 250, 252) "Persistence Layer"
-        participant Storage as "Local Disk Storage"
-        participant DB as "MySQL Database"
-    end
-
-    %% Step 1: Client Info (Light Blue)
-    rect rgb(238, 246, 255)
-        note over User, DB: Étape 1 : Informations Personnelles & Coordonnées (Client Info)
-        User->>FE: Fill identity & coordinates
-        FE->>API: POST /api/applications/{id}/client
-        API->>DB: Save Client & validate Step 1
-        DB-->>API: Confirm Client saved
-        API-->>FE: HTTP 200 { step: 1, completed: true }
-        FE-->>User: Étape 1 validée
-    end
-
-    %% Step 2: Credit & Geolocation (Light Green)
-    rect rgb(240, 253, 244)
-        note over User, DB: Étape 2 : Paramètres du Crédit & Géolocalisation Agence
-        User->>FE: Fill amount + choose branch via Photon OSM
-        FE->>API: POST /api/applications/{id}/credit
-        API->>DB: Save CreditRequest & Branch ID
-        DB-->>API: Confirm CreditRequest saved
-        API-->>FE: HTTP 200 { step: 2, completed: true }
-        FE-->>User: Étape 2 validée
-    end
-
-    %% Step 3: Project Details (Light Amber)
-    rect rgb(255, 251, 235)
-        note over User, DB: Étape 3 : Détails du Projet & Plan d'Investissement
-        User->>FE: Fill project details & investment
-        FE->>API: POST /api/applications/{id}/project
-        API->>DB: Save Project (sector, costs, coordinates)
-        DB-->>API: Confirm Project saved
-        API-->>FE: HTTP 200 { step: 3, completed: true }
-        FE-->>User: Étape 3 validée
-    end
-
-    %% Step 4: Document Upload & AI OCR (Light Rose)
-    rect rgb(255, 241, 242)
-        note over User, DB: Étape 4 : Téléversement des Pièces Justificatives & Vérification IA OCR
-        User->>FE: Upload document (CIN / Devis)
-        FE->>API: POST /api/applications/{id}/documents (multipart)
-        API->>Storage: Save file to 'storage/app/documents/'
-        Storage-->>API: Confirm file saved
-        API->>DB: Insert Document (status: 'PENDING_ANALYSIS')
-        DB-->>API: Confirm Document created
-        
-        API->>AI_Svc: verifyDocument(documentFile, docType)
-        AI_Svc->>AI_Svc: Build prompt with field extraction rules
-        AI_Svc->>Gemini: POST generateContent (Base64 + Prompt)
-        Gemini-->>AI_Svc: Structured JSON (is_valid, confidence, extracted_data, anomalies)
-        
-        AI_Svc->>DB: Update Document (ai_is_valid, ai_confidence, ai_extracted_data)
-        DB-->>AI_Svc: Confirm Document updated
-        AI_Svc-->>API: Return AI verification result
-        API-->>FE: HTTP 200 { document, ai_analysis_summary }
-        FE-->>User: Show AI conformity indicator
-    end
-
-    %% Final Submission (Light Purple)
-    rect rgb(245, 243, 255)
-        note over User, DB: Étape 5 : Soumission Finale & Verrouillage du Dossier
-        User->>FE: Click 'Soumettre Définitivement'
-        FE->>API: POST /api/applications/{id}/submit
-        API->>DB: Verify 4 steps complete
-        DB-->>API: 4 steps verified
-        API->>DB: Update status='SUBMITTED', is_locked=true
-        API->>DB: Assign Number (BTS-2026-0042)
-        DB-->>API: Confirm status updated & number assigned
-        API-->>FE: HTTP 200 { status: 'SUBMITTED', application_number }
-        FE-->>User: Confirmation screen with dossier number
-    end
+    Note over AI,FLOW: L'IA est consultative. Une indisponibilite ne prouve ni authenticite ni fraude.

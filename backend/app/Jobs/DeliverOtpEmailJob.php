@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\User;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\Mail;
  * The job renders the same emails.otp view with the same inline-logo embedding as the
  * sync driver, so queued vs. synchronous delivery is indistinguishable to the customer.
  */
-class DeliverOtpEmailJob implements ShouldQueue
+class DeliverOtpEmailJob implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 
@@ -63,7 +64,7 @@ class DeliverOtpEmailJob implements ShouldQueue
     {
         Log::error('[otp:email:queue] delivery job failed', [
             'user_id' => $this->user->id,
-            'exception' => $e->getMessage(),
+            'exception_class' => $e::class,
         ]);
     }
 }

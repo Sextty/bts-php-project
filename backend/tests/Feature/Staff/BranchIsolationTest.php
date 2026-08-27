@@ -7,7 +7,6 @@ use App\Models\CreditApplication;
 use App\Models\StaffUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -18,18 +17,25 @@ use Tests\TestCase;
  *
  * Verifies that after a full customer validation-2 flow (which auto-submits and routes the
  * application to a branch via BranchMatchingService), branch-restricted staff only see
- * applications routed to their own branch, while admins and unassigned staff see everything.
+ * applications routed to their own branch, while admins see everything and unassigned
+ * operational staff fail closed.
  */
 class BranchIsolationTest extends TestCase
 {
     use RefreshDatabase;
 
     private Branch $branchA;
+
     private Branch $branchB;
+
     private StaffUser $staffA;
+
     private StaffUser $staffB;
+
     private StaffUser $admin;
+
     private StaffUser $unassignedStaff;
+
     private User $customer;
 
     protected function setUp(): void
@@ -78,7 +84,10 @@ class BranchIsolationTest extends TestCase
      */
     private function fakeGemini(): void
     {
-        config(['services.gemini.api_key' => 'test-key']);
+        config([
+            'services.document_verification.provider' => 'gemini',
+            'services.gemini.api_key' => 'test-key',
+        ]);
         Http::fake(['generativelanguage.googleapis.com/*' => Http::response([
             'candidates' => [
                 ['content' => ['parts' => [['text' => json_encode([
@@ -133,7 +142,7 @@ class BranchIsolationTest extends TestCase
 
         $this->postJson("/api/applications/{$id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
 
         $this->postJson("/api/applications/{$id}/validation-1");
@@ -217,7 +226,7 @@ class BranchIsolationTest extends TestCase
         $this->getJson("/api/staff/applications/{$appB->id}")->assertOk();
     }
 
-    public function test_unassigned_staff_sees_all_branch_applications(): void
+    public function test_unassigned_staff_is_denied_branch_applications(): void
     {
         $this->fakeGemini();
 
@@ -226,13 +235,13 @@ class BranchIsolationTest extends TestCase
 
         $this->actAsStaff($this->unassignedStaff);
 
-        // Unassigned staff see both branches.
+        // Missing branch assignment must never become global access.
         $this->getJson('/api/staff/applications')
             ->assertOk()
-            ->assertJsonPath('data.meta.total', 2);
+            ->assertJsonPath('data.meta.total', 0);
 
-        $this->getJson("/api/staff/applications/{$appA->id}")->assertOk();
-        $this->getJson("/api/staff/applications/{$appB->id}")->assertOk();
+        $this->getJson("/api/staff/applications/{$appA->id}")->assertForbidden();
+        $this->getJson("/api/staff/applications/{$appB->id}")->assertForbidden();
     }
 
     public function test_branch_b_staff_sees_only_their_own_when_both_branches_have_apps(): void
@@ -254,6 +263,54 @@ class BranchIsolationTest extends TestCase
         // Show: Branch B's is accessible, Branch A's is forbidden.
         $this->getJson("/api/staff/applications/{$appB->id}")->assertOk();
         $this->getJson("/api/staff/applications/{$appA->id}")->assertForbidden();
+    }
+
+    public function test_branch_picker_is_scoped_for_operational_staff_and_global_for_admin(): void
+    {
+        $this->actAsStaff($this->staffA);
+        $this->getJson('/api/staff/branches')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.branches')
+            ->assertJsonPath('data.branches.0.id', $this->branchA->id);
+
+        $this->actAsStaff($this->unassignedStaff);
+        $this->getJson('/api/staff/branches')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.branches');
+
+        $this->actAsStaff($this->admin);
+        $this->getJson('/api/staff/branches')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.branches');
+    }
+
+    public function test_staff_reports_include_only_authorized_branch_threads(): void
+    {
+        $applicationA = CreditApplication::factory()->create([
+            'branch_id' => $this->branchA->id,
+            'status' => CreditApplication::STATUS_APPOINTMENT_CONFIRMED,
+        ]);
+        $applicationB = CreditApplication::factory()->create([
+            'branch_id' => $this->branchB->id,
+            'status' => CreditApplication::STATUS_APPOINTMENT_CONFIRMED,
+        ]);
+        $applicationA->reportMessages()->create([
+            'sender_type' => 'customer',
+            'user_id' => $applicationA->user_id,
+            'body' => 'Message synthétique agence A.',
+        ]);
+        $applicationB->reportMessages()->create([
+            'sender_type' => 'customer',
+            'user_id' => $applicationB->user_id,
+            'body' => 'Message synthétique agence B.',
+        ]);
+
+        $this->actAsStaff($this->staffA);
+
+        $this->getJson('/api/staff/reports')
+            ->assertOk()
+            ->assertJsonPath('data.meta.total', 1)
+            ->assertJsonPath('data.applications.0.id', $applicationA->id);
     }
 
     // ------------------------------------------------------------------
@@ -298,16 +355,9 @@ class BranchIsolationTest extends TestCase
 
         $this->actAsStaff($this->staffA);
 
-        // Staff A sees activity for their branch's app.
-        $this->assertGreaterThan(
-            0,
-            $this->getJson("/api/staff/activity?application_id={$appA->id}")->json('data.meta.total'),
-        );
-
-        // Staff A sees no activity for the other branch's app.
-        $this->getJson("/api/staff/activity?application_id={$appB->id}")
-            ->assertOk()
-            ->assertJsonPath('data.meta.total', 0);
+        // Staff A has no audit.view permission -> 403
+        $this->getJson("/api/staff/activity?application_id={$appA->id}")
+            ->assertForbidden();
     }
 
     // ------------------------------------------------------------------
@@ -322,7 +372,7 @@ class BranchIsolationTest extends TestCase
 
         // Set to STAFF_APPROVED directly (staff approve now chains past this to APPOINTMENT_PROPOSED,
         // but admin-reject is still valid from STAFF_APPROVED).
-        $app->update(['status' => CreditApplication::STATUS_STAFF_APPROVED]);
+        $app->forceFill(['status' => CreditApplication::STATUS_STAFF_APPROVED])->save();
 
         // Admin can see and reject (admin is not branch-restricted).
         $this->actAsStaff($this->admin);

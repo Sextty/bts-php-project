@@ -2,18 +2,19 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page } from '@playwright/test';
 
-export const CLIENT = 'http://127.0.0.1:3000';
-export const STAFF = 'http://127.0.0.1:3001';
-export const ADMIN = 'http://127.0.0.1:3002';
-export const API = 'http://127.0.0.1:8000';
+export const CLIENT = process.env.E2E_CLIENT_URL ?? 'http://127.0.0.1:3000';
+export const STAFF = process.env.E2E_STAFF_URL ?? 'http://127.0.0.1:3001';
+export const ADMIN = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:3002';
+export const SECURITY = process.env.E2E_SECURITY_URL ?? 'http://127.0.0.1:3003';
+export const API = process.env.E2E_API_URL ?? 'http://127.0.0.1:8000';
 export const API_URL = API;
 
-const BACKEND_LOG = join(__dirname, '..', 'backend', 'storage', 'logs', 'laravel.log');
+const OTP_FILE = process.env.E2E_OTP_FILE ?? join(__dirname, '.e2e-otp.jsonl');
 
 /** Fresh unique identity for every run so repeat runs never collide. */
 export function uniqueCreds(): { email: string; phone: string; password: string } {
   const stamp = Date.now().toString().slice(-10);
-  const phone = `+216${stamp.slice(0, 8)}`;
+  const phone = `+2162${stamp.slice(-7)}`;
   return {
     email: `e2e.customer.${stamp}@bts.test`,
     phone,
@@ -28,7 +29,7 @@ export interface E2EState {
   app3: { id: number; nDemande: string };
 }
 
-const STATE_FILE = join(__dirname, '.e2e-state.json');
+const STATE_FILE = process.env.E2E_STATE_FILE ?? join(__dirname, '.e2e-state.json');
 
 export function saveState(state: E2EState): void {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
@@ -48,26 +49,19 @@ export function clearState(): void {
 }
 
 /**
- * The API runs with SMS_PROVIDER=log in the e2e environment: OTP codes are written to
- * storage/logs/laravel.log by LogSmsDriver instead of being emailed (email/SMS transport is
- * the only external service this suite does not call). We read the most recent code issued
- * for the phone number — everything else (DB, queue, API, browser) is the real thing.
+ * Isolated E2E runs use a dedicated ephemeral transport file. OTP values never enter normal
+ * application logs, and the runner deletes the file during teardown.
  */
 export async function readOtpForPhone(phone: string): Promise<string> {
-  const log = readFileSync(BACKEND_LOG, 'utf8');
-  const re = new RegExp(
-    `\\[sms:log-driver\\] outgoing SMS \\{[^}]*?"to":"${escapeRegExp(phone)}","message":"Your BTS Bank verification code is (\\d{6})`,
-    'g'
-  );
-  const matches = [...log.matchAll(re)];
-  if (matches.length === 0) {
-    throw new Error(`No OTP found in log for ${phone}`);
+  const records = readFileSync(OTP_FILE, 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { phone: string; code: string });
+  const match = records.filter((record) => record.phone === phone).at(-1);
+  if (!match) {
+    throw new Error(`No OTP found in ephemeral E2E channel for ${phone}`);
   }
-  return matches[matches.length - 1][1];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return match.code;
 }
 
 export async function registerCustomer(page: Page, creds: { email: string; phone: string; password: string }) {
@@ -83,7 +77,7 @@ export async function registerCustomer(page: Page, creds: { email: string; phone
 
   const code = await readOtpForPhone(creds.phone);
   await page.locator('#otp_code').fill(code);
-  await page.getByRole('button', { name: 'Verify and continue' }).click();
+  await page.getByRole('button', { name: 'Vérifier et continuer' }).click();
   await page.waitForURL('**/dashboard', { timeout: 30_000 });
 }
 
@@ -96,22 +90,25 @@ export async function loginCustomer(page: Page, creds: { email: string; phone: s
 
   const code = await readOtpForPhone(creds.phone);
   await page.locator('#otp_code').fill(code);
-  await page.getByRole('button', { name: 'Log in' }).click();
+  await page.getByRole('button', { name: 'Se connecter' }).click();
   await page.waitForURL('**/dashboard', { timeout: 30_000 });
+  await expect(page.getByText(/Bienvenue sur votre portail BTS Bank/)).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('bts_access_token'))).not.toBeNull();
 }
 
 export async function createApplication(page: Page): Promise<number> {
   await page.goto(`${CLIENT}/applications`);
-  await page.getByRole('button', { name: 'New application' }).click();
+  await expect(page.getByRole('heading', { name: 'Mes demandes de crédit' })).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem('bts_access_token'))).not.toBeNull();
+  await page.getByRole('button', { name: 'Nouvelle demande' }).click();
   await page.waitForURL(/\/applications\/\d+\/client/, { timeout: 30_000 });
   const id = Number(page.url().match(/\/applications\/(\d+)\/client/)?.[1]);
   return id;
 }
 
-/** Fills one shadcn Select by clicking its trigger and picking the option with the given value. */
+/** Selects one native form option by value. */
 async function pickSelect(page: Page, triggerId: string, value: string) {
-  await page.locator(`#${triggerId}`).click();
-  await page.getByRole('option', { name: value, exact: false }).first().click();
+  await page.locator(`#${triggerId}`).selectOption(value);
 }
 
 /**
@@ -130,15 +127,15 @@ export async function completeApplication(page: Page, applicationId: number) {
   await page.locator('#pays_naissance').fill('Tunisie');
   await page.locator('#nationalite').fill('Tunisienne');
   await page.locator('#pays_residence').fill('Tunisie');
-  await pickSelect(page, 'etat_civil', 'Mari');
+  await pickSelect(page, 'etat_civil', 'marié');
   await page.locator('#nombre_enfants').fill('2');
   await pickSelect(page, 'type_pid', 'CIN');
-  await page.locator('#numero_pid').fill(`0${String(applicationId).padStart(7, '0')}${String(applicationId).padStart(4, '0')}`);
+  await page.locator('#numero_pid').fill(String(10_000_000 + applicationId).slice(-8));
   await page.locator('#date_delivrance_pid').fill('2010-01-15');
   await page.locator('#lieu_delivrance_pid').fill('Tunis');
   await page.locator('#profession').fill('Ingénieur');
   await page.locator('#date_entree_relation').fill('2012-03-01');
-  await page.getByRole('button', { name: 'Enregistrer et continuer' }).click();
+  await page.getByRole('button', { name: 'Étape suivante : Demande de Crédit' }).click();
   await page.waitForURL(`**/applications/${applicationId}/credit`, { timeout: 30_000 });
 
   // Step 2 — credit request
@@ -147,17 +144,17 @@ export async function completeApplication(page: Page, applicationId: number) {
   await page.locator('#prenom_ou_dc').fill('John');
   await page.locator('#date_depot').fill('2026-08-01');
   await page.locator('#date_reception').fill('2026-08-02');
-  await page.locator('#type_demande').fill('Crédit immobilier');
-  await page.locator('#code_devise').fill('TND');
+  await pickSelect(page, 'type_demande', 'crédit de création');
   await page.locator('#montant_global_sollicite').fill('150000');
   await page.locator('#nombre_credits_sollicites').fill('1');
   await page.locator('#unite_depot').fill('Unité centrale');
-  await page.getByRole('button', { name: 'Enregistrer et continuer' }).click();
+  await page.getByRole('button', { name: 'Étape suivante : Descriptif du projet' }).click();
   await page.waitForURL(`**/applications/${applicationId}/project`, { timeout: 30_000 });
 
-  // Step 3 — project (a CIN document is uploaded here — the upload card lives on steps 1-3,
-  // not on the validation page).
-  await page.locator('#type_projet').fill('Construction');
+  // Step 3 — project. The customer UI intentionally no longer embeds the generic attachment
+  // zone here, so this isolated test uploads its synthetic CIN through the same authenticated
+  // backend endpoint after the project step has been committed.
+  await pickSelect(page, 'type_projet', 'Création');
   await page.locator('#activite').fill('Immobilier');
   await page.locator('#nom_ou_rs').fill('Doe SARL');
   await page.locator('#prenom_ou_dc').fill('John');
@@ -167,37 +164,51 @@ export async function completeApplication(page: Page, applicationId: number) {
   await page.locator('#ville').fill('Tunis');
   await page.locator('#code_postal').fill('1000');
   await page.locator('#delegation').fill('Bab Bhar');
-  await page.locator('#localisation').fill('Centre-ville');
   await page.locator('#cout').fill('900000');
   await page.locator('#investissement_personnel').fill('200000');
   await page.locator('#financement').fill('700000');
   await page.locator('#revenus').fill('60000');
   await page.locator('#depenses').fill('24000');
-  await page.locator('input[type="file"]').setInputFiles(join(__dirname, 'fixtures', 'cin.pdf'));
-  await expect(page.getByText('cin.pdf')).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Enregistrer et continuer' }).click();
+  await page.getByRole('button', { name: 'Étape suivante : Validation' }).click();
   await page.waitForURL(`**/applications/${applicationId}/validation`, { timeout: 30_000 });
+
+  const token = await page.evaluate(() => sessionStorage.getItem('bts_access_token'));
+  if (!token) throw new Error('Customer token missing before synthetic document upload.');
+  const fixturePath = join(__dirname, 'fixtures', 'cin.pdf');
+  const upload = await page.request.post(`${API}/api/applications/${applicationId}/documents`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    multipart: {
+      document_type: 'cin',
+      file: { name: 'cin.pdf', mimeType: 'application/pdf', buffer: readFileSync(fixturePath) },
+    },
+  });
+  expect(upload.ok(), await upload.text()).toBeTruthy();
+  await page.reload();
+  await expect(page.getByText('cin.pdf')).toBeVisible({ timeout: 30_000 });
 
   // Validation 1 — the AI authenticity check runs against the real Gemini API when configured;
   // it degrades to "not verified" without blocking the application.
-  await page.getByRole('button', { name: 'Run validation' }).click();
-  await expect(page.getByRole('button', { name: 'Confirm and finalize' })).toBeVisible({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Lancer la vérification de conformité' }).click();
+  await expect(page.getByRole('button', { name: 'Confirmer et transmettre le dossier' })).toBeVisible({ timeout: 120_000 });
 
-  // Finalize (locks everything) and submit.
-  await page.getByRole('button', { name: 'Confirm and finalize' }).click();
-  await page.getByRole('button', { name: 'Yes, finalize' }).click();
-  await expect(page.getByRole('button', { name: 'Submit application' })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Submit application' }).click();
-  await expect(page.getByText('This application has been submitted to BTS Bank.')).toBeVisible({ timeout: 30_000 });
+  // Final confirmation atomically locks and submits the application.
+  await page.getByRole('button', { name: 'Confirmer et transmettre le dossier' }).click();
+  await page.getByRole('button', { name: 'Oui, transmettre mon dossier' }).click();
+  await expect(page.getByText('Dossier soumis avec succès')).toBeVisible({ timeout: 30_000 });
 }
 
 /** Reads the generated n_demande from the "N° Demande" summary row on the validation page. */
 export async function readNDemande(page: Page): Promise<string> {
-  const label = page.getByText('N° Demande');
-  const row = label.locator('..');
-  const value = await row.locator('p.font-medium').textContent();
-  if (!value) throw new Error('n_demande not found on validation page');
-  return value.trim();
+  const applicationId = Number(page.url().match(/\/applications\/(\d+)/)?.[1]);
+  const token = await page.evaluate(() => sessionStorage.getItem('bts_access_token'));
+  if (!applicationId || !token) throw new Error('Application id or customer token missing.');
+  const response = await page.request.get(`${API}/api/applications/${applicationId}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok()).toBeTruthy();
+  const value = (await response.json()).data.application.credit_request?.n_demande as string | undefined;
+  if (!value) throw new Error('n_demande missing from application API response.');
+  return value;
 }
 
 export async function logoutCustomer(page: Page) {
@@ -207,12 +218,15 @@ export async function logoutCustomer(page: Page) {
 }
 
 export const staffCreds = { email: 'e2e.staff@bts.test', password: 'E2E-Staff-Pass-2026!' };
+export const otherBranchStaffCreds = { email: 'e2e.other-branch@bts.test', password: 'E2E-Other-Branch-Pass-2026!' };
 export const adminCreds = { email: 'e2e.admin@bts.test', password: 'E2E-Admin-Pass-2026!' };
+export const securityCreds = { email: 'e2e.security@bts.test', password: 'E2E-Security-Pass-2026!' };
+export const suspendedSecurityCreds = { email: 'e2e.suspended.security@bts.test', password: 'E2E-Suspended-Pass-2026!' };
 
-export async function loginStaff(page: Page, base = STAFF) {
+export async function loginStaff(page: Page, base = STAFF, creds = staffCreds) {
   await page.goto(`${base}/login`);
-  await page.locator('#email').fill(staffCreds.email);
-  await page.locator('#password').fill(staffCreds.password);
+  await page.locator('#email').fill(creds.email);
+  await page.locator('#password').fill(creds.password);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/dashboard', { timeout: 30_000 });
 }

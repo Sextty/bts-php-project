@@ -5,7 +5,7 @@ namespace App\ValueObjects;
 /**
  * Immutable structured verdict produced by DocumentVerificationService::verify for one document.
  *
- * Carries the parsed Gemini result plus the domain interpretation of it, and enforces the
+ * Carries the parsed AI result plus the domain interpretation of it, and enforces the
  * backend invariants at construction — the model's answer can never outrank the business rules:
  *   - a critical field mismatch invalidates the document even when the model answered
  *     `is_valid: true` (defensive backstop — a hard mismatch in name/number/birth date);

@@ -18,19 +18,18 @@ import {
   Download,
   Eye,
   FileText,
-  Clock,
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Lock,
   MessageSquare,
   Calendar,
   Layers,
   ArrowUpRight,
   Sparkles,
-  Info,
   Server,
   UserCheck,
+  Laptop,
+  MapPin,
 } from 'lucide-react';
 import { StaffHeader } from '@/components/staff-header';
 import { ErrorAlert } from '@/components/error-alert';
@@ -221,10 +220,21 @@ export default function ActivityPage() {
       router.replace('/login');
       return;
     }
-    setLoading(true);
-    Promise.all([loadTrafficData(days), loadLogs(1, 'all')])
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Erreur de chargement.'))
-      .finally(() => setLoading(false));
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setLoading(true);
+      Promise.all([loadTrafficData(days), loadLogs(1, 'all')])
+        .catch((err) => {
+          if (active) setError(err instanceof ApiError ? err.message : 'Erreur de chargement.');
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    });
+    return () => {
+      active = false;
+    };
   }, [router, days, loadLogs, loadTrafficData]);
 
   async function handleRefresh() {
@@ -308,12 +318,12 @@ export default function ActivityPage() {
   if (loading) return <PageLoading />;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="staff-page text-[#1E2D3D]">
       <StaffHeader role={role} />
 
-      <main id="main" className="mx-auto max-w-7xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
+      <main id="main" className="staff-main space-y-6">
         {/* ── 1. Page Hero Header ── */}
-        <section className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[#E0E4E9] pb-6">
+        <section className="staff-page-hero flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <p className="overline">Traçabilité & Sécurité Bancaire BCT</p>
@@ -597,8 +607,7 @@ export default function ActivityPage() {
                     setSelectedCategory('all');
                     changeAction('all');
                   }}
-                  className="btn-outline text-xs inline-flex items-center gap-1"
-                  style={{ padding: '6px 14px' }}
+                  className="btn-outline min-h-9 px-3.5 py-1.5 text-xs"
                 >
                   Réinitialiser tous les filtres
                 </button>
@@ -655,7 +664,7 @@ export default function ActivityPage() {
 
                           {/* Action Badge */}
                           <td className="py-3 px-4">
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-medium max-w-md truncate" style={{ backgroundColor: 'inherit' }}>
+                            <div className="inline-flex max-w-md items-center gap-1.5 truncate rounded-md border px-2.5 py-1 text-[11px] font-medium">
                               <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-semibold ${badge.bg}`}>
                                 <BadgeIcon className="size-3" />
                                 <span>{humanAction(log.action)}</span>
@@ -721,8 +730,7 @@ export default function ActivityPage() {
                     type="button"
                     disabled={page <= 1 || logsLoading}
                     onClick={() => goToPage(page - 1)}
-                    className="btn-outline text-xs inline-flex items-center gap-1 disabled:opacity-50"
-                    style={{ padding: '6px 12px' }}
+                    className="btn-outline min-h-9 px-3 py-1.5 text-xs disabled:opacity-50"
                   >
                     <ChevronLeft className="size-3.5" />
                     <span>Précédent</span>
@@ -736,8 +744,7 @@ export default function ActivityPage() {
                     type="button"
                     disabled={page >= lastPage || logsLoading}
                     onClick={() => goToPage(page + 1)}
-                    className="btn-outline text-xs inline-flex items-center gap-1 disabled:opacity-50"
-                    style={{ padding: '6px 12px' }}
+                    className="btn-outline min-h-9 px-3 py-1.5 text-xs disabled:opacity-50"
                   >
                     <span>Suivant</span>
                     <ChevronRight className="size-3.5" />
@@ -802,6 +809,63 @@ export default function ActivityPage() {
                     <p className="text-[#3D5166]">Aucun dossier associé (action système/compte)</p>
                   )}
                 </div>
+
+                {selectedLog.device && (
+                  <div className="p-3.5 bg-white rounded-xl border border-[#E0E4E9] space-y-3 sm:col-span-2 shadow-xs">
+                    <span className="text-[11px] font-bold uppercase text-[#0C1825] flex items-center gap-1.5">
+                      <Laptop className="size-3.5 text-[#C0272D]" /> Système, Matériel & Cartes Réseau
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Système (OS) :</span>
+                        <p className="font-bold text-[#0C1825]">{selectedLog.device.os}</p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Modèle Machine :</span>
+                        <p className="font-bold text-[#0C1825]">{selectedLog.device.computer_model || selectedLog.device.device_model}</p>
+                      </div>
+                      {selectedLog.device.cpu && (
+                        <div>
+                          <span className="text-[10px] text-gray-500 font-semibold uppercase">Processeur (CPU) :</span>
+                          <p className="font-semibold text-[#0C1825] text-[11px]">{selectedLog.device.cpu}</p>
+                        </div>
+                      )}
+                      {selectedLog.device.ram && (
+                        <div>
+                          <span className="text-[10px] text-gray-500 font-semibold uppercase">Mémoire (RAM) :</span>
+                          <p className="font-semibold text-[#0C1825]">{selectedLog.device.ram}</p>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Localisation :</span>
+                        <p className="font-semibold text-emerald-800 flex items-center gap-1">
+                          <MapPin className="size-3 text-red-500 shrink-0" />
+                          <span>{selectedLog.device.location}</span>
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-semibold uppercase">Adresse MAC Active :</span>
+                        <p className="font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 inline-block">
+                          {selectedLog.device.mac_address}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedLog.device.network_adapters && selectedLog.device.network_adapters.length > 0 && (
+                      <div className="pt-2 border-t border-[#E0E4E9] space-y-1.5">
+                        <span className="text-[10px] font-bold uppercase text-gray-500">Cartes Réseau :</span>
+                        <div className="space-y-1">
+                          {selectedLog.device.network_adapters.map((ad, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-[11px] bg-gray-50 p-2 rounded border border-gray-200">
+                              <span className="font-medium text-[#0C1825] truncate">{ad.name}</span>
+                              <span className="font-mono font-bold text-indigo-700">{ad.mac_address}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {isAdmin && selectedLog.ip_address && (
                   <div className="p-3 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] space-y-1">

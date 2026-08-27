@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { StaffHeader } from '@/components/staff-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { ReportChat } from '@/components/report-chat';
@@ -11,7 +11,6 @@ import {
   getStaffReportMessages,
   sendReportMessageWithAttachment,
   type ReportMessageDto,
-  type ReportThreadDto,
 } from '@/lib/api/reports';
 import { ApiError } from '@/lib/api/client';
 import { getStaffToken, getStaffRole } from '@/lib/auth/staff-token';
@@ -48,9 +47,9 @@ export default function StaffReportDetailPage() {
   }, [applicationId, router]);
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="staff-page text-[#1E2D3D]">
       <StaffHeader role={role} />
-      <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
+      <main id="main" className="staff-main max-w-5xl space-y-6">
         <Link
           href="/reports"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D5166] hover:text-[#0C1825]"
@@ -59,7 +58,7 @@ export default function StaffReportDetailPage() {
           <span>Retour aux signalements</span>
         </Link>
 
-        <div className="border-b border-[#E0E4E9] pb-4">
+        <div className="staff-page-hero">
           <p className="overline">Discussion Sécurisée</p>
           <h1 className="font-display text-2xl font-light text-[#0C1825]">
             Échanges pour le Dossier #{applicationId}

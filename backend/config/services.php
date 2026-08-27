@@ -37,6 +37,7 @@ return [
 
     'sms' => [
         'provider' => env('SMS_PROVIDER', 'log'),
+        'e2e_otp_file' => env('E2E_OTP_FILE'),
     ],
 
     'vonage' => [
@@ -70,18 +71,48 @@ return [
         'queue_delivery' => env('PASSWORD_RESET_QUEUE_DELIVERY', false),
     ],
 
-    // Gemini — Google's multimodal API used for advisory document authenticity checks.
+    // Local-only prevents any external document transfer. Cloud adapters are explicit opt-ins.
+    'document_verification' => [
+        'provider' => env('DOCUMENT_VERIFICATION_PROVIDER', 'local'),
+        'max_payload_bytes' => (int) env('DOCUMENT_AI_MAX_PAYLOAD_BYTES', 15 * 1024 * 1024),
+        // One HTTP request can contain several documents. Keep the complete advisory AI pass
+        // below PHP/web-server limits; documents not reached remain available for Staff review.
+        'validation_budget_seconds' => (int) env('DOCUMENT_AI_VALIDATION_BUDGET_SECONDS', 20),
+    ],
+
+    // OpenRouter OpenAI-compatible adapter. MiniMax M3 is multimodal; PDF input uses
+    // OpenRouter's free Cloudflare parser so the selected free model can inspect PDF content.
+    'openrouter' => [
+        'api_key' => env('OPENROUTER_API_KEY'),
+        'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
+        'model' => env('OPENROUTER_MODEL', 'minimax/minimax-m3:free'),
+        'http_referer' => env('OPENROUTER_HTTP_REFERER', env('APP_URL')),
+        'app_title' => env('OPENROUTER_APP_TITLE', 'BTS Bank Development'),
+        'connect_timeout_seconds' => (int) env('OPENROUTER_CONNECT_TIMEOUT_SECONDS', 5),
+        'timeout_seconds' => (int) env('OPENROUTER_TIMEOUT_SECONDS', 45),
+        'max_retries' => (int) env('OPENROUTER_MAX_RETRIES', 1),
+        'retry_delay_ms' => (int) env('OPENROUTER_RETRY_DELAY_MS', 500),
+        'max_output_tokens' => (int) env('OPENROUTER_MAX_OUTPUT_TOKENS', 768),
+        'temperature' => (float) env('OPENROUTER_TEMPERATURE', 0.1),
+        'reasoning_enabled' => (bool) env('OPENROUTER_REASONING_ENABLED', true),
+        'pdf_engine' => env('OPENROUTER_PDF_ENGINE', 'cloudflare-ai'),
+    ],
+
+    // Optional Gemini adapter for advisory document authenticity checks.
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-flash-latest'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
         // Transport resilience: connect timeout, overall request timeout, bounded retries with
         // exponential backoff for 429/5xx/network failures, and the file size cap the AI is
         // willing to look at. A permanently failing API degrades to "not yet checked" — it
         // never blocks an application (see CreditApplicationValidationService).
-        'connect_timeout_seconds' => (int) env('GEMINI_CONNECT_TIMEOUT_SECONDS', 10),
-        'timeout_seconds' => (int) env('GEMINI_TIMEOUT_SECONDS', 60),
-        'max_retries' => (int) env('GEMINI_MAX_RETRIES', 2),
-        'retry_delay_ms' => (int) env('GEMINI_RETRY_DELAY_MS', 1000),
+        'connect_timeout_seconds' => (int) env('GEMINI_CONNECT_TIMEOUT_SECONDS', 5),
+        'timeout_seconds' => (int) env('GEMINI_TIMEOUT_SECONDS', 25),
+        'max_retries' => (int) env('GEMINI_MAX_RETRIES', 1),
+        'retry_delay_ms' => (int) env('GEMINI_RETRY_DELAY_MS', 250),
+        'max_output_tokens' => (int) env('GEMINI_MAX_OUTPUT_TOKENS', 512),
+        'temperature' => (float) env('GEMINI_TEMPERATURE', 0.1),
+        'thinking_budget' => (int) env('GEMINI_THINKING_BUDGET', 0),
         'max_payload_bytes' => (int) env('GEMINI_MAX_PAYLOAD_BYTES', 15 * 1024 * 1024),
     ],
 
@@ -93,11 +124,12 @@ return [
         'channels' => [
             'application.submitted' => ['in-app'],
             'document.rejected' => ['in-app', 'email'],
-            'staff.approved' => ['in-app', 'email'],
+            'staff.approved' => ['in-app'],
             'staff.rejected' => ['in-app', 'email'],
             'admin.approved' => ['in-app', 'email'],
             'admin.rejected' => ['in-app', 'email'],
-            'appointment.created' => ['in-app', 'email'],
+            // The final approval email already contains the first appointment details.
+            'appointment.created' => ['in-app'],
             'appointment.changed' => ['in-app', 'email'],
             'report.message' => ['in-app'],
         ],

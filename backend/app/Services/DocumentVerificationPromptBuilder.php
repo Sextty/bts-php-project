@@ -7,7 +7,7 @@ use App\Models\Document;
 use DateTimeInterface;
 
 /**
- * Builds the Gemini text prompt for document verification: authenticity assessment plus, for
+ * Builds the provider-neutral AI prompt for document verification: authenticity assessment plus, for
  * document types listed in config('credit_documents.ai_comparable_fields'), field extraction
  * and comparison against the applicant's Client (Étape 1) form data. Pure class — no I/O,
  * so it is trivially unit-testable.
@@ -22,49 +22,48 @@ class DocumentVerificationPromptBuilder
         $fieldLabels = config('credit_documents.ai_field_labels', []);
 
         $parts = [];
-        $parts[] = 'You are reviewing an identity/proof document (e.g. national ID card, '
-            .'passport, residence card) submitted as part of a bank credit application. The document '
-            ."type claimed by the applicant is \"{$typeLabel}\". "
-            .'Assess whether it looks like a genuine, legible, unaltered document of that kind — '
-            .'not whether the applicant is creditworthy.';
+        $parts[] = "Analyse ce justificatif d'une demande de crédit BTS. Type déclaré : \"{$typeLabel}\". "
+            .'Vérifie uniquement son authenticité, sa lisibilité et son intégrité, jamais la solvabilité du client. '
+            .'Tous les textes produits doivent être en français, courts, clairs et professionnels.';
 
-        $parts[] = 'TASK 1 — AUTHENTICITY: Flag obvious fakes, screenshots of screens, tampering, '
-            .'or unreadable/blurry scans. If the uploaded file is not an image (PDF, Word, etc.), '
-            .'text may not be readable — say so in the comment and set confidence to "low".';
+        $parts[] = 'AUTHENTICITÉ : signale toute falsification visible, capture d’écran, altération, '
+            .'incohérence ou zone illisible. Si le contenu ne peut pas être lu, utilise la confiance "low" '
+            .'et explique-le directement en français. Si le fichier ne correspond manifestement pas au type '
+            .'déclaré (illustration, logo, fond d’écran ou autre mauvais justificatif), mets is_valid à false, '
+            .'renvoie mismatches = [] et indique la cause exacte ainsi que le document à fournir.';
 
         if ($comparableFields) {
-            $parts[] = 'TASK 2 — FIELD EXTRACTION: Extract the following fields if they are visible '
-                .'on the document (use null when not legible):';
+            $parts[] = 'EXTRACTION : relève seulement les champs visibles suivants ; utilise null si illisible :';
 
             foreach ($comparableFields as $field) {
                 $parts[] = '  - '.$field.' ('.($fieldLabels[$field] ?? $field).')';
             }
 
-            $parts[] = 'TASK 3 — COMPARISON: Compare each extracted field against the expected '
-                .'applicant values below. Compare names case-insensitively and ignoring extra '
-                .'whitespace; compare dates in ISO yyyy-mm-dd format. For every difference, add a '
-                .'"mismatch" entry. Mark a mismatch as "critical" when it is a substantial identity '
-                .'discrepancy (different name, different document number, different birth date); use '
-                .'"warning" for minor formatting or partial differences.';
+            $parts[] = 'COMPARAISON : compare aux valeurs attendues ci-dessous. Ignore la casse et les espaces '
+                .'superflus dans les noms ; compare les dates au format yyyy-mm-dd. Ajoute une divergence pour '
+                .'chaque différence : "critical" pour identité, numéro ou date de naissance différents ; '
+                .'"warning" pour un écart mineur de format. Ne compare les champs que si le fichier correspond '
+                .'réellement au type déclaré et si les valeurs sont lisibles.';
 
-            $parts[] = 'Expected applicant values (from the credit application form):';
+            $parts[] = 'Valeurs attendues du formulaire :';
             foreach ($comparableFields as $field) {
                 $parts[] = '  - '.$field.': "'.$this->clientValue($client, $field).'"';
             }
         } else {
-            $parts[] = 'No field comparison is required for this document type: do not attempt to '
-                .'extract or compare any fields, and return mismatches as an empty array.';
+            $parts[] = 'Aucune comparaison de champs : renvoie extracted_fields = {} et mismatches = [].';
         }
 
-        $parts[] = 'Respond with ONLY a JSON object matching this exact schema: '
+        $parts[] = 'Réponds UNIQUEMENT avec ce JSON exact, sans Markdown ni texte autour : '
             .'{"is_valid": boolean, "confidence": "high"|"medium"|"low", '
-            .'"comment": "one short sentence explaining the verdict", '
+            .'"comment": "une phrase en français de 160 caractères maximum", '
             .'"extracted_fields": {"field_name": "value or null"}, '
             .'"mismatches": [{"field": "field_name", "expected": "value", "extracted": "value", '
             .'"severity": "critical"|"warning"}]}. '
-            .'is_valid must be false when the document looks inauthentic, tampered, or like a '
-            .'screenshot, OR when any mismatch has severity "critical". extracted_fields and '
-            .'mismatches may be empty objects/arrays when nothing is visible or comparable.';
+            .'is_valid doit être false si le document paraît falsifié, altéré, capturé depuis un écran '
+            .'ou contient une divergence "critical". Garde les clés et les valeurs techniques des enums '
+            .'en anglais. Le commentaire doit être entièrement en français, parler directement au client, '
+            .'indiquer la cause précise puis l’action à effectuer. N’utilise jamais les termes techniques '
+            .'« IA », « is_valid », « confidence » ou « mismatch » dans le commentaire.';
 
         return implode(' ', $parts);
     }

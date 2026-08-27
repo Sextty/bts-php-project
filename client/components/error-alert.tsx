@@ -17,7 +17,7 @@ export function ErrorAlert({
   if (!message && fieldMessages.length === 0) return null;
 
   return (
-    <Alert variant="destructive" className="mb-4">
+    <Alert variant="destructive" className="mb-5 border-red-200 bg-red-50 text-red-950" role="alert" aria-live="assertive">
       <AlertDescription>
         {message && <p>{message}</p>}
         {fieldMessages.length > 0 && (

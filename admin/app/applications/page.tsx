@@ -8,9 +8,7 @@ import {
   ChevronRight,
   ChevronLeft,
   FolderOpen,
-  Filter,
   Inbox,
-  Eye,
   RefreshCw,
 } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
@@ -41,9 +39,10 @@ function ApplicationsListContent() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<ApplicationStatus | 'ALL'>(initialStatus ?? 'ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
   const [meta, setMeta] = useState<{ current_page: number; last_page: number; total: number } | null>(null);
 
-  const fetchApplications = useCallback(async (status: ApplicationStatus | 'ALL', isRefresh = false) => {
+  const fetchApplications = useCallback(async (status: ApplicationStatus | 'ALL', requestedPage: number, isRefresh = false) => {
     if (!getStaffToken()) {
       router.replace('/login');
       return;
@@ -52,7 +51,7 @@ function ApplicationsListContent() {
     else setLoading(true);
     try {
       const filterStatus = status === 'ALL' ? undefined : status;
-      const result = await listStaffApplications(filterStatus);
+      const result = await listStaffApplications(filterStatus, requestedPage);
       setApplications(result.applications);
       setMeta(result.meta);
       setError(null);
@@ -65,8 +64,19 @@ function ApplicationsListContent() {
   }, [router]);
 
   useEffect(() => {
-    fetchApplications(statusFilter);
-  }, [fetchApplications, statusFilter]);
+    queueMicrotask(() => void fetchApplications(statusFilter, page));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchApplications(statusFilter, page, true);
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [fetchApplications, page, statusFilter]);
 
   // Client-side search filter
   const filteredApps = searchQuery.trim()
@@ -82,9 +92,9 @@ function ApplicationsListContent() {
   if (loading && applications.length === 0) return <PageLoading />;
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-6">
+    <div className="admin-page">
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="admin-page-hero flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0C1825] tracking-tight flex items-center gap-2.5">
             <FolderOpen className="size-6 text-[#C0272D]" />
@@ -97,7 +107,7 @@ function ApplicationsListContent() {
 
         <button
           type="button"
-          onClick={() => fetchApplications(statusFilter, true)}
+          onClick={() => fetchApplications(statusFilter, page, true)}
           disabled={refreshing}
           className="size-9 rounded-xl bg-white border border-[#E0E4E9] shadow-xs flex items-center justify-center text-[#3D5166] hover:text-[#C0272D] hover:border-[#C0272D]/30 transition-all shrink-0"
           title="Rafraîchir"
@@ -112,7 +122,10 @@ function ApplicationsListContent() {
           <button
             key={tab.value}
             type="button"
-            onClick={() => setStatusFilter(tab.value)}
+            onClick={() => {
+              setStatusFilter(tab.value);
+              setPage(1);
+            }}
             className={`px-4 py-2 text-xs font-semibold rounded-xl border transition-all whitespace-nowrap ${
               statusFilter === tab.value
                 ? 'bg-[#C0272D] text-white border-[#C0272D] shadow-xs'
@@ -129,7 +142,7 @@ function ApplicationsListContent() {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-[#3D5166]" />
         <input
           type="text"
-          placeholder="Rechercher par nom, n° de demande, email…"
+          placeholder="Rechercher sur cette page par nom, n° de demande, email…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-11 pr-4 py-3 text-sm bg-white rounded-xl border border-[#E0E4E9] shadow-xs placeholder:text-[#3D5166]/50 focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]/20 transition-colors"
@@ -236,6 +249,8 @@ function ApplicationsListContent() {
                 <button
                   type="button"
                   disabled={meta.current_page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  aria-label="Page précédente"
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#E0E4E9] bg-white text-[#3D5166] hover:bg-[#F4F6F8] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronLeft className="size-3.5" />
@@ -243,6 +258,8 @@ function ApplicationsListContent() {
                 <button
                   type="button"
                   disabled={meta.current_page >= meta.last_page}
+                  onClick={() => setPage((current) => Math.min(meta.last_page, current + 1))}
+                  aria-label="Page suivante"
                   className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#E0E4E9] bg-white text-[#3D5166] hover:bg-[#F4F6F8] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronRight className="size-3.5" />

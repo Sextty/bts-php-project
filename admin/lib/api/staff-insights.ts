@@ -45,6 +45,50 @@ export interface ActivityActor {
   role: 'staff' | 'admin' | null;
 }
 
+export interface NetworkAdapterDto {
+  name: string;
+  raw_name: string;
+  description: string;
+  mac_address: string;
+  ipv4?: string | null;
+  ipv6?: string | null;
+  subnet_mask?: string | null;
+  gateway?: string | null;
+  dns?: string | null;
+  status: string;
+  is_active: boolean;
+  is_primary_internet?: boolean;
+  speed?: string | null;
+  type: 'wifi' | 'ethernet' | 'vmware' | 'hyperv' | 'bluetooth' | 'virtual' | string;
+}
+
+export interface DeviceDetailsDto {
+  os: string;
+  os_short?: string;
+  os_version?: string | null;
+  os_family: 'windows' | 'android' | 'ios' | 'macos' | 'linux' | 'chromeos' | 'unknown' | string;
+  os_build?: string | null;
+  architecture?: string;
+  computer_model?: string | null;
+  cpu?: string | null;
+  ram?: string | null;
+  gpu?: string | null;
+  browser: string;
+  browser_version?: string | null;
+  device_type: 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown';
+  device_model: string;
+  device_name: string;
+  network_adapters?: NetworkAdapterDto[];
+  active_network_adapter?: string | null;
+  location: string;
+  country: string;
+  country_code: string;
+  city: string;
+  mac_address: string;
+  device_fingerprint: string;
+  ip_address?: string | null;
+}
+
 /**
  * Fields beyond `actor`/`action` are admin-only — the API omits them entirely for staff, so they
  * are optional here rather than nullable. Never render them without checking presence.
@@ -57,6 +101,7 @@ export interface ActivityLogDto {
   actor: ActivityActor;
   ip_address?: string | null;
   user_agent?: string | null;
+  device?: DeviceDetailsDto | null;
   previous_state?: Record<string, unknown> | null;
   new_state?: Record<string, unknown> | null;
 }

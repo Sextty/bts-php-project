@@ -3,15 +3,12 @@
 namespace Tests\Feature\Notifications;
 
 use App\Events\NotificationSent;
-use App\Jobs\DeliverNotificationJob;
 use App\Models\AppNotification;
+use App\Models\Branch;
 use App\Models\StaffUser;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Event;
-use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 class NotificationServiceTest extends TestCase
@@ -23,11 +20,8 @@ class NotificationServiceTest extends TestCase
         return app(NotificationService::class);
     }
 
-    public function test_notify_user_persists_one_row_and_dispatches_in_app_and_email_delivery(): void
+    public function test_notify_user_persists_notification_and_durable_delivery_intents(): void
     {
-        Event::fake([NotificationSent::class]);
-        Bus::fake([DeliverNotificationJob::class]);
-
         $user = User::factory()->create();
 
         $notification = $this->service()->notifyUser($user, 'document.rejected', 'Document flagged', 'Please re-upload.', ['document_id' => 3], 'document-3');
@@ -40,8 +34,18 @@ class NotificationServiceTest extends TestCase
             'dedupe_key' => 'document-3',
         ]);
 
-        Event::assertDispatched(NotificationSent::class, fn (NotificationSent $event) => $event->notification->id === $notification->id);
-        Bus::assertDispatched(DeliverNotificationJob::class, fn (DeliverNotificationJob $job) => $job->notificationId === $notification->id && $job->channel === 'email');
+        $this->assertDatabaseHas('notification_deliveries', [
+            'app_notification_id' => $notification->id,
+            'channel' => 'email',
+        ]);
+        $this->assertDatabaseHas('async_outbox_events', [
+            'aggregate_id' => $notification->id,
+            'type' => 'notification.broadcast',
+        ]);
+        $this->assertDatabaseHas('async_outbox_events', [
+            'aggregate_id' => $notification->id,
+            'type' => 'notification.delivery',
+        ]);
     }
 
     public function test_same_type_and_dedupe_key_is_ignored_on_replay(): void
@@ -108,6 +112,30 @@ class NotificationServiceTest extends TestCase
 
         $this->assertSame(1, AppNotification::forNotifiable($admin)->count());
         $this->assertSame(0, AppNotification::forNotifiable($regular)->count());
+    }
+
+    public function test_application_notification_is_limited_to_its_branch_and_global_roles(): void
+    {
+        $branchA = Branch::factory()->create();
+        $branchB = Branch::factory()->create();
+        $staffA = StaffUser::factory()->forBranch($branchA)->create();
+        $staffB = StaffUser::factory()->forBranch($branchB)->create();
+        $unassigned = StaffUser::factory()->create();
+        $admin = StaffUser::factory()->admin()->create();
+        $security = StaffUser::factory()->create(['role' => 'security']);
+
+        $created = $this->service()->notifyStaff(
+            'application.submitted',
+            'New application',
+            'Submitted.',
+            ['branch_id' => $branchA->id],
+            'application-submitted-10',
+        );
+
+        $recipientIds = collect($created)->pluck('notifiable_id')->sort()->values()->all();
+        $this->assertSame(collect([$staffA->id, $admin->id, $security->id])->sort()->values()->all(), $recipientIds);
+        $this->assertNotContains($staffB->id, $recipientIds);
+        $this->assertNotContains($unassigned->id, $recipientIds);
     }
 
     public function test_staff_notifications_are_deduplicated_per_staff_member(): void

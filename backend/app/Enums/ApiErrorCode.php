@@ -36,10 +36,22 @@ enum ApiErrorCode: string
     case NoSlotsAvailable = 'NO_SLOTS_AVAILABLE';
     case NotCurrentAppointment = 'NOT_CURRENT_APPOINTMENT';
     case AppointmentAlreadyDecided = 'APPOINTMENT_ALREADY_DECIDED';
+    case AppointmentRescheduleLimit = 'APPOINTMENT_RESCHEDULE_LIMIT';
     case NoAppointment = 'NO_APPOINTMENT';
     case DocumentNotFound = 'DOCUMENT_NOT_FOUND';
+    case DocumentMalwareDetected = 'DOCUMENT_MALWARE_DETECTED';
+    case DocumentNotClean = 'DOCUMENT_NOT_CLEAN';
+    case MalwareScannerUnavailable = 'MALWARE_SCANNER_UNAVAILABLE';
     case ReportNotOpen = 'REPORT_NOT_OPEN';
     case DuplicateEntry = 'DUPLICATE_ENTRY';
+    case BankingAccountUnavailable = 'BANKING_ACCOUNT_UNAVAILABLE';
+    case BankingInsufficientFunds = 'BANKING_INSUFFICIENT_FUNDS';
+    case BankingCurrencyMismatch = 'BANKING_CURRENCY_MISMATCH';
+    case BankingIdempotencyConflict = 'BANKING_IDEMPOTENCY_CONFLICT';
+    case BankingTransferLimitExceeded = 'BANKING_TRANSFER_LIMIT_EXCEEDED';
+    case BankingTransferRequestUnavailable = 'BANKING_TRANSFER_REQUEST_UNAVAILABLE';
+    case BankingSelfApproval = 'BANKING_SELF_APPROVAL';
+    case AnalyticsExportLimit = 'ANALYTICS_EXPORT_LIMIT';
 
     public function status(): int
     {
@@ -48,12 +60,18 @@ enum ApiErrorCode: string
             self::OtpExpired => 410,
             self::OtpInvalid, self::InvalidResetToken => 400,
             self::RateLimited, self::MaxAttemptsExceeded => 429,
-            self::OtpDispatchFailed, self::NoBranchAvailable, self::NoSlotsAvailable => 503,
-            self::Forbidden, self::AccountSuspended, self::ApplicationLocked => 403,
+            self::OtpDispatchFailed, self::NoBranchAvailable, self::NoSlotsAvailable,
+            self::MalwareScannerUnavailable => 503,
+            self::Forbidden, self::AccountSuspended, self::ApplicationLocked,
+            self::DocumentNotClean => 403,
             self::ApplicationNotLocked, self::Validation1Required, self::StepsIncomplete,
             self::InvalidApplicationStatus, self::NotCurrentAppointment,
-            self::AppointmentAlreadyDecided => 409,
-            self::InvalidStatusFilter, self::DuplicateEntry => 422,
+            self::AppointmentAlreadyDecided, self::AppointmentRescheduleLimit, self::BankingAccountUnavailable,
+            self::BankingInsufficientFunds, self::BankingCurrencyMismatch,
+            self::BankingIdempotencyConflict, self::BankingTransferLimitExceeded,
+            self::BankingTransferRequestUnavailable, self::BankingSelfApproval => 409,
+            self::InvalidStatusFilter, self::DuplicateEntry, self::DocumentMalwareDetected,
+            self::AnalyticsExportLimit => 422,
             self::NotUnderReview, self::NoAppointment, self::DocumentNotFound,
             self::ReportNotOpen => 404,
         };
@@ -84,10 +102,22 @@ enum ApiErrorCode: string
             self::NoSlotsAvailable => 'This branch has no available appointment slots.',
             self::NotCurrentAppointment => 'This is not the current appointment proposal.',
             self::AppointmentAlreadyDecided => 'This appointment has already been decided.',
+            self::AppointmentRescheduleLimit => 'Vous avez utilisé vos 4 changements de rendez-vous. Contactez votre agence pour toute nouvelle modification.',
             self::NoAppointment => 'No appointment has been proposed for this application yet.',
             self::DocumentNotFound => 'Document not found.',
+            self::DocumentMalwareDetected => 'The uploaded document was rejected by malware protection.',
+            self::DocumentNotClean => 'This document is not cleared for download.',
+            self::MalwareScannerUnavailable => 'Document malware scanning is temporarily unavailable.',
             self::ReportNotOpen => 'This application has no open report.',
             self::DuplicateEntry => 'A record with this value already exists.',
+            self::BankingAccountUnavailable => 'This bank account is not available for the requested operation.',
+            self::BankingInsufficientFunds => 'This account has insufficient available funds.',
+            self::BankingCurrencyMismatch => 'Both bank accounts must use the same currency.',
+            self::BankingIdempotencyConflict => 'This idempotency key was already used with different transaction data.',
+            self::BankingTransferLimitExceeded => 'This transfer exceeds the configured banking limit.',
+            self::BankingTransferRequestUnavailable => 'This transfer request is no longer available for review.',
+            self::BankingSelfApproval => 'The staff member who requested a transfer cannot approve or reject it.',
+            self::AnalyticsExportLimit => 'The requested aggregate export is too large.',
         };
     }
 }

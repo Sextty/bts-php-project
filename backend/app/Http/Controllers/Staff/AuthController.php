@@ -15,13 +15,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 /**
- * Internal employee auth — plain email+password, no OTP. Staff/admin accounts have no phone or
- * Telegram link (they're bootstrapped via `php artisan staff:make`, not the customer signup
- * flow), so the OTP machinery built for customers doesn't apply here.
+ * Internal employee auth — plain email+password.
  *
- * Staff and admin have separate entrances: `/staff/login` only accepts `staff` accounts and
- * `/staff/admin/login` only accepts `admin` accounts, so a wrong-role account cannot even obtain
- * a token from the other portal.
+ * Staff, security and admin have separate entrances:
+ * - `/staff/login` accepts `staff` accounts
+ * - `/staff/admin/login` accepts `admin` and `super_admin` accounts
+ * - `/security/auth/login` accepts `security`, `admin` and `super_admin` accounts
  */
 class AuthController extends Controller
 {
@@ -37,10 +36,18 @@ class AuthController extends Controller
 
     public function adminLogin(StaffLoginRequest $request): JsonResponse
     {
-        return $this->attemptLogin($request, 'admin');
+        return $this->attemptLogin($request, ['admin', 'super_admin']);
     }
 
-    private function attemptLogin(StaffLoginRequest $request, string $role): JsonResponse
+    public function securityLogin(StaffLoginRequest $request): JsonResponse
+    {
+        return $this->attemptLogin($request, ['security', 'admin', 'super_admin']);
+    }
+
+    /**
+     * @param string|array<string> $role
+     */
+    private function attemptLogin(StaffLoginRequest $request, string|array $role): JsonResponse
     {
         $staff = StaffUser::where('email', $request->string('email'))->first();
 
@@ -55,8 +62,10 @@ class AuthController extends Controller
             throw new ApiException(ApiErrorCode::InvalidCredentials, 'The email or password is incorrect.');
         }
 
-        if ($staff->role !== $role) {
-            throw new ApiException(ApiErrorCode::Forbidden, "This account does not have the {$role} role.");
+        $allowedRoles = (array) $role;
+        if (! in_array($staff->role, $allowedRoles, true)) {
+            $required = implode(' or ', $allowedRoles);
+            throw new ApiException(ApiErrorCode::Forbidden, "This account does not have the {$required} role.");
         }
 
         if ($staff->status !== 'active') {

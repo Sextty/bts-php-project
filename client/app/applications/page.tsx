@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, FilePlus2, FileText, Calendar, Building2, ArrowRight } from 'lucide-react';
+import { ChevronRight, FilePlus2, Calendar, Building2 } from 'lucide-react';
 import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
@@ -31,30 +31,72 @@ function progressPercent(status: string): number {
   return map[phase] ?? 10;
 }
 
-function isEditable(status: CreditApplicationDto['status']): boolean {
-  return ['DRAFT', 'STEP_1_COMPLETED', 'STEP_2_COMPLETED', 'STEP_3_COMPLETED', 'READY_FOR_VALIDATION_1', 'VALIDATION_1_COMPLETED'].includes(status);
-}
-
 export default function ApplicationsPage() {
   const router = useRouter();
   const [applications, setApplications] = useState<CreditApplicationDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchApplications = useCallback(async (showLoading = false) => {
     if (!getToken()) {
       router.replace('/login');
       return;
     }
-    listApplications()
-      .then(({ applications }) => {
-        const resolved = Array.isArray(applications) ? applications : [];
-        setApplications(resolved);
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Impossible de charger vos demandes.'))
-      .finally(() => setLoading(false));
+    if (showLoading) setLoading(true);
+    try {
+      const { applications: freshApplications, meta } = await listApplications();
+      setApplications(Array.isArray(freshApplications) ? freshApplications : []);
+      setPage(meta.current_page);
+      setLastPage(meta.last_page);
+      setTotal(meta.total);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de charger vos demandes.');
+    } finally {
+      setLoading(false);
+    }
   }, [router]);
+
+  useEffect(() => {
+    queueMicrotask(() => void fetchApplications(true));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchApplications();
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [fetchApplications]);
+
+  async function handleLoadMore() {
+    if (loadingMore || page >= lastPage) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const result = await listApplications(page + 1);
+      setApplications((current) => {
+        const merged = new Map(current.map((application) => [application.id, application]));
+        result.applications.forEach((application) => merged.set(application.id, application));
+        return Array.from(merged.values());
+      });
+      setPage(result.meta.current_page);
+      setLastPage(result.meta.last_page);
+      setTotal(result.meta.total);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de charger les demandes suivantes.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function handleCreate() {
     setError(null);
@@ -69,7 +111,7 @@ export default function ApplicationsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href="/dashboard" label="Retour au tableau de bord" />
@@ -81,7 +123,7 @@ export default function ApplicationsPage() {
           className="mb-2"
         />
 
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-[#E0E4E9] pb-4">
+        <div className="portal-page-heading flex flex-col justify-between gap-5 p-6 sm:flex-row sm:items-end sm:p-7">
           <div>
             <p className="overline mb-0.5">Dossiers de Financement</p>
             <h1 className="font-display text-3xl font-light text-[#0C1825]">
@@ -91,15 +133,14 @@ export default function ApplicationsPage() {
               <p className="text-xs text-[#3D5166] mt-1">
                 {applications.length === 0
                   ? 'Aucune demande enregistrée'
-                  : `${applications.length} demande${applications.length > 1 ? 's' : ''} enregistrée${applications.length > 1 ? 's' : ''}`}
+                  : `${total} demande${total > 1 ? 's' : ''} enregistrée${total > 1 ? 's' : ''}`}
               </p>
             )}
           </div>
           <button
             onClick={handleCreate}
             disabled={creating}
-            className="btn-red text-xs inline-flex items-center gap-2 shadow-xs shrink-0"
-            style={{ padding: '8px 18px' }}
+            className="btn-red shrink-0 gap-2 px-5 text-xs shadow-xs"
           >
             <FilePlus2 className="size-4" />
             <span>{creating ? 'Création en cours…' : 'Nouvelle demande'}</span>
@@ -205,6 +246,18 @@ export default function ApplicationsPage() {
                 </Link>
               );
             })}
+            {page < lastPage && (
+              <div className="pt-3 text-center">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="btn-secondary px-5 text-xs"
+                >
+                  {loadingMore ? 'Chargement…' : 'Afficher plus de demandes'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

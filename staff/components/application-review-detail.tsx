@@ -1,28 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import {
   AlertCircle,
-  AlertTriangle,
-  CircleCheck,
-  CircleHelp,
-  CircleX,
-  MessageSquare,
   User,
   FileText,
   Layers,
-  MapPin,
   UploadCloud,
   CheckCircle2,
   XCircle,
-  Clock,
-  Building2,
   ShieldCheck,
-  ShieldAlert,
-  ArrowRight,
   Eye,
-  Send,
+  Sparkles,
 } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
 import {
@@ -36,7 +25,6 @@ import {
 import { StaffDocumentPreviewModal } from '@/components/staff-document-preview-modal';
 import type { StaffApplicationDto } from '@/lib/api/staff';
 import type { DocumentDto } from '@/lib/api/credit-applications';
-import { Sparkles, Download } from 'lucide-react';
 
 export function ApplicationReviewDetail({
   application,
@@ -160,6 +148,52 @@ export function ApplicationReviewDetail({
               label="Unité de dépôt"
               value={application.credit_request?.unite_depot ?? 'Agence régionale'}
             />
+
+            {/* Financing Breakdown (EQP, FDR, AMG, CHP) */}
+            {(Number(application.credit_request?.montant_eqp) > 0 ||
+              Number(application.credit_request?.montant_fdr) > 0 ||
+              Number(application.credit_request?.montant_amg) > 0 ||
+              Number(application.credit_request?.montant_chp) > 0) && (
+              <div className="col-span-2 pt-2 border-t border-gray-100">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                  Ventilation Détaillée (EQP, FDR, AMG, CHP)
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  {Number(application.credit_request?.montant_eqp) > 0 && (
+                    <div className="p-2 rounded-lg bg-purple-50 border border-purple-200">
+                      <span className="text-[10px] text-purple-700 font-medium">Équipement (EQP)</span>
+                      <p className="font-mono font-bold text-[#0C1825]">
+                        {Number(application.credit_request?.montant_eqp).toLocaleString('fr-FR')} TND
+                      </p>
+                    </div>
+                  )}
+                  {Number(application.credit_request?.montant_fdr) > 0 && (
+                    <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
+                      <span className="text-[10px] text-blue-700 font-medium">Fonds Roulement (FDR)</span>
+                      <p className="font-mono font-bold text-[#0C1825]">
+                        {Number(application.credit_request?.montant_fdr).toLocaleString('fr-FR')} TND
+                      </p>
+                    </div>
+                  )}
+                  {Number(application.credit_request?.montant_amg) > 0 && (
+                    <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                      <span className="text-[10px] text-amber-700 font-medium">Aménagement (AMG)</span>
+                      <p className="font-mono font-bold text-[#0C1825]">
+                        {Number(application.credit_request?.montant_amg).toLocaleString('fr-FR')} TND
+                      </p>
+                    </div>
+                  )}
+                  {Number(application.credit_request?.montant_chp) > 0 && (
+                    <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                      <span className="text-[10px] text-emerald-700 font-medium">Cheptel (CHP)</span>
+                      <p className="font-mono font-bold text-[#0C1825]">
+                        {Number(application.credit_request?.montant_chp).toLocaleString('fr-FR')} TND
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -265,8 +299,7 @@ export function ApplicationReviewDetail({
                             setPreviewDoc(doc);
                             setPreviewOpen(true);
                           }}
-                          className="btn-red text-[11px] inline-flex items-center gap-1.5 shadow-xs"
-                          style={{ padding: '6px 14px' }}
+                          className="btn-red min-h-9 px-3.5 py-1.5 text-[11px] shadow-xs"
                         >
                           <Eye className="size-3.5" />
                           <span>Visualiser & Données IA</span>
@@ -334,8 +367,7 @@ export function ApplicationReviewDetail({
               type="button"
               onClick={() => setApproveOpen(true)}
               disabled={working}
-              className="btn-red text-xs inline-flex items-center gap-1.5 shadow-xs"
-              style={{ padding: '10px 24px' }}
+              className="btn-red px-6 py-2.5 text-xs shadow-xs"
             >
               <CheckCircle2 className="size-4" />
               <span>Valider l&apos;accord technique</span>

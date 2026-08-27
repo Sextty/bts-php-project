@@ -254,7 +254,9 @@ export function ReportChat({
           setSelectedBranchId((prev) => prev || res.branches[0].id);
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        setScheduleError(error instanceof ApiError ? error.message : 'Impossible de charger les agences.');
+      });
   }, []);
 
   const isSlashActive = draft.startsWith('/');
@@ -268,10 +270,6 @@ export function ReportChat({
         c.description.toLowerCase().includes(query.replace('/', ''))
     );
   }, [draft, isSlashActive]);
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [filteredCommands.length]);
 
   function executeSlashCommand(command: SlashCommand) {
     if (command.actionType === 'modal_schedule' || command.actionType === 'modal_branch') {
@@ -766,7 +764,10 @@ export function ReportChat({
             ref={textareaRef}
             id={`report-message-${applicationId}`}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setSelectedIndex(0);
+            }}
             onKeyDown={(e) => {
               if (isSlashActive && filteredCommands.length > 0) {
                 if (e.key === 'ArrowDown') {

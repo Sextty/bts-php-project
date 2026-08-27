@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, MessageSquare, AlertCircle, Clock, CheckCircle2 } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { StaffHeader } from '@/components/staff-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { listStaffReports } from '@/lib/api/reports';
@@ -32,10 +32,10 @@ export default function StaffReportsPage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="staff-page text-[#1E2D3D]">
       <StaffHeader role={role} />
-      <main id="main" className="mx-auto max-w-7xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
-        <section className="border-b border-[#E0E4E9] pb-6">
+      <main id="main" className="staff-main space-y-6">
+        <section className="staff-page-hero">
           <p className="overline">Canal de Messagerie & Assistance</p>
           <h1 className="font-display text-3xl font-light text-[#0C1825]">
             Discussions & Signalements Clients
@@ -60,7 +60,7 @@ export default function StaffReportsPage() {
             </p>
           </div>
         ) : (
-          <div className="figma-card bg-white overflow-hidden shadow-xs">
+          <div className="staff-table-shell">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -108,10 +108,15 @@ export default function StaffReportsPage() {
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <span className="btn-red text-[11px] inline-flex items-center gap-1" style={{ padding: '4px 10px' }}>
+                        <Link
+                          href={`/reports/${app.id}`}
+                          onClick={(event) => event.stopPropagation()}
+                          aria-label={`Ouvrir la discussion du dossier ${app.credit_request?.n_demande ?? app.id}`}
+                          className="btn-red px-2.5 py-1 text-[11px]"
+                        >
                           <MessageSquare className="size-3" />
                           <span>Ouvrir discussion</span>
-                        </span>
+                        </Link>
                       </td>
                     </tr>
                   ))}

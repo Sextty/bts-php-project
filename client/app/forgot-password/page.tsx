@@ -26,14 +26,14 @@ export default function ForgotPasswordPage() {
       const result = await forgotPassword({ email });
       setMessage(result.message);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue. Veuillez réessayer.');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <AuthCard title="Reset your password" description="We'll email you a link to reset your password.">
+    <AuthCard title="Mot de passe oublié" description="Indiquez votre e-mail. Nous vous enverrons un lien sécurisé de réinitialisation.">
       <ErrorAlert message={error} />
       {message ? (
         <Alert className="border-primary/30 bg-primary/5">
@@ -43,7 +43,7 @@ export default function ForgotPasswordPage() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email" className="font-semibold text-[#1e2d3d]">Adresse e-mail</Label>
             <Input
               id="email"
               type="email"
@@ -54,14 +54,14 @@ export default function ForgotPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? 'Sending…' : 'Send reset link'}
+          <Button type="submit" className="h-11 w-full bg-[#c0272d] font-semibold hover:bg-[#9e1f24]" disabled={submitting}>
+            {submitting ? 'Envoi en cours…' : 'Envoyer le lien'}
           </Button>
         </form>
       )}
       <p className="mt-4 text-center text-sm text-muted-foreground">
         <Link href="/login" className="font-medium text-primary underline">
-          Back to log in
+          Retour à la connexion
         </Link>
       </p>
     </AuthCard>

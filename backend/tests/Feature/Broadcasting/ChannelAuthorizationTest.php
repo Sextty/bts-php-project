@@ -83,7 +83,7 @@ class ChannelAuthorizationTest extends CreditApplicationTestCase
 
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");

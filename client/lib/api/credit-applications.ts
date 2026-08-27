@@ -2,7 +2,7 @@ import { apiFetch, apiUpload } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
 import type { AppointmentDto } from '@/lib/api/appointments';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 export type ApplicationStatus =
   | 'DRAFT'
@@ -59,6 +59,10 @@ export interface CreditRequestDto {
   type_demande: string;
   code_devise: string;
   montant_global_sollicite: string;
+  montant_eqp?: string | number | null;
+  montant_fdr?: string | number | null;
+  montant_amg?: string | number | null;
+  montant_chp?: string | number | null;
   nombre_credits_sollicites: number;
   unite_depot: string;
 }
@@ -131,8 +135,11 @@ export interface CreditApplicationDto {
   latest_appointment?: AppointmentDto | null;
 }
 
-export function listApplications() {
-  return apiFetch<{ applications: CreditApplicationDto[] }>('/applications', { auth: true });
+export function listApplications(page = 1) {
+  return apiFetch<{
+    applications: CreditApplicationDto[];
+    meta: { current_page: number; last_page: number; per_page: number; total: number };
+  }>(`/applications?page=${page}&per_page=25`, { auth: true });
 }
 
 export function createApplication() {
@@ -220,4 +227,3 @@ export async function downloadDocumentBlob(
   const blob = await response.blob();
   return { blob, mimeType };
 }
-

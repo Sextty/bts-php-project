@@ -14,7 +14,7 @@ export const STATUS_LABELS: Record<string, string> = {
   STAFF_REJECTED: 'Rejetée',
   APPROVED: 'Approuvée',
   REJECTED: 'Rejetée',
-  APPOINTMENT_PROPOSED: 'Rendez-vous proposé',
+  APPOINTMENT_PROPOSED: 'Demande acceptée',
   APPOINTMENT_CONFIRMED: 'Rendez-vous confirmé',
   APPOINTMENT_LOCKED: 'Contact requis',
 };
@@ -35,7 +35,7 @@ export const STATUS_DESCRIPTIONS: Record<string, string> = {
   STAFF_REJECTED: 'Votre demande a été rejetée.',
   APPROVED: 'Votre demande a été approuvée.',
   REJECTED: 'Votre demande a été rejetée.',
-  APPOINTMENT_PROPOSED: 'Un rendez-vous vous a été proposé. Veuillez confirmer ou refuser.',
+  APPOINTMENT_PROPOSED: 'Votre demande est acceptée et un rendez-vous a été programmé dans votre agence.',
   APPOINTMENT_CONFIRMED: 'Votre rendez-vous est confirmé. Présentez-vous à l\'agence.',
   APPOINTMENT_LOCKED: 'Un membre du personnel vous contactera pour organiser le rendez-vous.',
 };

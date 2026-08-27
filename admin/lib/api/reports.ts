@@ -1,4 +1,4 @@
-import { apiFetch, apiUpload } from '@/lib/api/client';
+import { apiDownload, apiFetch, apiUpload } from '@/lib/api/client';
 import type { StaffApplicationDto } from '@/lib/api/staff';
 
 export interface ReportThreadDto {
@@ -71,13 +71,15 @@ export function listBranches() {
   return apiFetch<{ branches: BranchDto[] }>('/staff/branches', { auth: 'staff' });
 }
 
-export function getReportMessages(applicationId: number) {
+export function getReportMessages(applicationId: number, beforeId?: number) {
+  const query = beforeId ? `?before_id=${beforeId}` : '';
   return apiFetch<{
     messages: ReportMessageDto[];
+    meta?: { has_more: boolean; next_before_id: number | null; limit: number };
     is_closed?: boolean;
     closed_at?: string | null;
     closed_reason?: string | null;
-  }>(`/staff/reports/${applicationId}/messages`, { auth: 'staff' });
+  }>(`/staff/reports/${applicationId}/messages${query}`, { auth: 'staff' });
 }
 
 export function sendReportMessage(applicationId: number, body: string) {
@@ -96,6 +98,10 @@ export function sendReportMessageWithAttachment(applicationId: number, body?: st
     return apiUpload<{ message: ReportMessageDto }>(`/staff/reports/${applicationId}/messages`, formData);
   }
   return sendReportMessage(applicationId, body || '');
+}
+
+export function downloadReportAttachment(applicationId: number, messageId: number): Promise<Blob> {
+  return apiDownload(`/staff/reports/${applicationId}/messages/${messageId}/attachment`);
 }
 
 export function closeStaffReport(applicationId: number, reason?: string) {

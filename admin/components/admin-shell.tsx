@@ -16,9 +16,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8]">
+    <div className="admin-root">
       <AdminSidebar />
-      <div className="lg:pl-64">
+      <div className="lg:pl-72">
         <main id="main" className="min-h-screen">
           {children}
         </main>

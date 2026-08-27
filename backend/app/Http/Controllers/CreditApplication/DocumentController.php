@@ -13,6 +13,8 @@ use App\Models\Document;
 use App\Services\AuditLogService;
 use App\Services\CreditApplicationService;
 use App\Services\DocumentStorage\DocumentStorage;
+use App\Services\DocumentSecurity\MalwareScanner;
+use App\Services\DocumentSecurity\DocumentAccessPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +28,8 @@ class DocumentController extends Controller
         private readonly CreditApplicationService $applications,
         private readonly AuditLogService $auditLog,
         private readonly DocumentStorage $storage,
+        private readonly MalwareScanner $malwareScanner,
+        private readonly DocumentAccessPolicy $documentAccess,
     ) {}
 
     public function store(UploadDocumentRequest $request, CreditApplication $application): JsonResponse
@@ -33,6 +37,25 @@ class DocumentController extends Controller
         $this->applications->assertEditable($application);
 
         $file = $request->file('file');
+        $scan = $this->malwareScanner->scan($file->getRealPath());
+        $scanMode = config('credit_documents.malware_scan.mode', 'optional');
+
+        if ($scan['status'] === 'infected') {
+            $this->auditLog->log(
+                'credit_application.document_malware_rejected',
+                $application->user,
+                newState: ['document_type' => $request->string('document_type'), 'signature' => $scan['signature']],
+                ipAddress: $request->ip(),
+                userAgent: $request->userAgent(),
+                application: $application,
+            );
+
+            throw new ApiException(ApiErrorCode::DocumentMalwareDetected);
+        }
+
+        if (in_array($scan['status'], ['unavailable', 'error'], true) && $scanMode === 'required') {
+            throw new ApiException(ApiErrorCode::MalwareScannerUnavailable);
+        }
         // The storage layer sniffs the real content (finfo), validates it against the MIME
         // allowlist, and generates the stored name itself — a UUID + the extension that matches
         // the actual bytes, never the customer-supplied original filename (path traversal /
@@ -40,13 +63,16 @@ class DocumentController extends Controller
         $path = $this->storage->store($application, $file);
 
         try {
-            $document = DB::transaction(function () use ($application, $request, $file, $path) {
+            $document = DB::transaction(function () use ($application, $request, $file, $path, $scan) {
                 $document = $application->documents()->create([
                     'document_type' => $request->string('document_type'),
                     'original_filename' => $file->getClientOriginalName(),
                     'disk_path' => $path,
                     'mime_type' => $file->getMimeType(),
                     'size_bytes' => $file->getSize(),
+                    'malware_scan_status' => $scan['status'],
+                    'malware_signature' => $scan['signature'],
+                    'malware_scanned_at' => in_array($scan['status'], ['clean', 'infected'], true) ? now() : null,
                 ]);
 
                 $this->auditLog->log(
@@ -88,6 +114,8 @@ class DocumentController extends Controller
         if ($document->credit_application_id !== $application->id || $document->trashed()) {
             throw new ApiException(ApiErrorCode::DocumentNotFound);
         }
+
+        $this->documentAccess->assertDownloadable($document);
 
         return $this->storage->response(
             $document->disk_path,

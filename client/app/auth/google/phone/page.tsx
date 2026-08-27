@@ -28,22 +28,22 @@ function GooglePhoneContent() {
       setPreAuthToken(result.pre_auth_token);
       router.push('/auth/google/verify-otp');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue. Veuillez réessayer.');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <AuthCard title="One more step" description="Add a phone number so we can verify your account.">
+    <AuthCard title="Dernière étape" description="Ajoutez votre numéro de téléphone pour sécuriser et vérifier votre compte.">
       <ErrorAlert message={error} />
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="phone">Phone number</Label>
+          <Label htmlFor="phone" className="font-semibold text-[#1e2d3d]">Numéro de téléphone</Label>
           <Input
             id="phone"
             type="tel"
-            placeholder="+21620000000"
+            placeholder="+216 20 000 000"
             required
             autoFocus
             autoComplete="tel"
@@ -51,8 +51,8 @@ function GooglePhoneContent() {
             onChange={(e) => setPhone(e.target.value)}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Sending code…' : 'Send verification code'}
+        <Button type="submit" className="h-11 w-full bg-[#c0272d] font-semibold hover:bg-[#9e1f24]" disabled={submitting}>
+          {submitting ? 'Envoi du code…' : 'Envoyer le code de vérification'}
         </Button>
       </form>
     </AuthCard>

@@ -5,6 +5,7 @@ namespace Tests\Feature\Queue;
 use App\Jobs\DeliverOtpEmailJob;
 use App\Jobs\SendPasswordResetEmailJob;
 use App\Models\User;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -83,5 +84,13 @@ class QueuedEmailDeliveryTest extends TestCase
         Queue::assertPushed(SendPasswordResetEmailJob::class, function (SendPasswordResetEmailJob $job) use ($user) {
             return $job->user->id === $user->id && $job->token !== '';
         });
+    }
+
+    public function test_jobs_carrying_authentication_secrets_are_encrypted(): void
+    {
+        $user = User::factory()->create();
+
+        $this->assertInstanceOf(ShouldBeEncrypted::class, new DeliverOtpEmailJob($user, '123456', 5));
+        $this->assertInstanceOf(ShouldBeEncrypted::class, new SendPasswordResetEmailJob($user, 'reset-secret'));
     }
 }

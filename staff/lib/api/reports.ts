@@ -16,6 +16,7 @@ export interface ReportMessageDto {
 
 export interface ReportThreadDto {
   messages: ReportMessageDto[];
+  meta?: { has_more: boolean; next_before_id: number | null; limit: number };
   is_closed?: boolean;
   closed_at?: string | null;
   closed_reason?: string | null;
@@ -64,8 +65,9 @@ export function listBranches() {
   return apiFetch<{ branches: BranchDto[] }>('/staff/branches', { auth: 'staff' });
 }
 
-export function getStaffReportMessages(applicationId: number) {
-  return apiFetch<ReportThreadDto>(`/staff/reports/${applicationId}/messages`, { auth: 'staff' });
+export function getStaffReportMessages(applicationId: number, beforeId?: number) {
+  const query = beforeId ? `?before_id=${beforeId}` : '';
+  return apiFetch<ReportThreadDto>(`/staff/reports/${applicationId}/messages${query}`, { auth: 'staff' });
 }
 
 export function sendStaffReportMessage(applicationId: number, body: string) {

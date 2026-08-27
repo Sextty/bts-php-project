@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\StaffUser;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,7 +15,8 @@ class CreditApplicationResource extends JsonResource
             'status' => $this->status,
             'is_locked' => $this->isLocked(),
             'submitted_at' => $this->submitted_at,
-            'rejection_reason' => $this->rejection_reason,
+            // Review notes are internal. Staff APIs retain them; customer APIs do not expose them.
+            'rejection_reason' => $request->user() instanceof StaffUser ? $this->rejection_reason : null,
             'created_at' => $this->created_at,
             'applicant' => $this->whenLoaded('user', fn () => [
                 'id' => $this->user->id,

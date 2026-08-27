@@ -21,6 +21,10 @@ class CreditRequest extends Model
         'type_demande',
         'code_devise',
         'montant_global_sollicite',
+        'montant_eqp',
+        'montant_fdr',
+        'montant_amg',
+        'montant_chp',
         'nombre_credits_sollicites',
         'unite_depot',
     ];
@@ -31,6 +35,10 @@ class CreditRequest extends Model
             'date_depot' => 'date',
             'date_reception' => 'date',
             'montant_global_sollicite' => 'decimal:3',
+            'montant_eqp' => 'decimal:3',
+            'montant_fdr' => 'decimal:3',
+            'montant_amg' => 'decimal:3',
+            'montant_chp' => 'decimal:3',
             'nombre_credits_sollicites' => 'integer',
         ];
     }

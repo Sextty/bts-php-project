@@ -19,7 +19,6 @@ import { getAppointment, acceptAppointment, rejectAppointment, type AppointmentD
 import { getApplication, type ApplicationStatus } from '@/lib/api/credit-applications';
 import {
   getReportMessages,
-  sendReportMessage,
   sendReportMessageWithAttachment,
   type ReportMessageDto,
 } from '@/lib/api/reports';
@@ -93,6 +92,11 @@ export default function AppointmentPage() {
       setApplicationStatus(application_status as ApplicationStatus);
       setAppointment(appointment);
       setRejectOpen(false);
+      if (appointment?.remaining_reschedules === 0) {
+        getReportMessages(applicationId)
+          .then(({ messages }) => setReportMessages(messages))
+          .catch(() => setReportMessages([]));
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Une erreur est survenue. Veuillez réessayer.');
     } finally {
@@ -105,12 +109,14 @@ export default function AppointmentPage() {
   const isConfirmed = appointment?.status === 'accepted' || applicationStatus === 'APPOINTMENT_CONFIRMED';
   const isLocked = applicationStatus === 'APPOINTMENT_LOCKED';
   const isCancelled = applicationStatus === 'CANCELLED';
-  const maxAttempts = appointment?.max_attempts ?? 5;
-  const currentAttempt = appointment?.attempt_number ?? 1;
-  const remainingChances = Math.max(0, maxAttempts - currentAttempt);
+  const maxReschedules = appointment?.max_reschedules ?? 4;
+  const rescheduleCount = appointment?.reschedule_count ?? 0;
+  const remainingChanges = appointment?.remaining_reschedules ?? maxReschedules;
+  const isAtRescheduleLimit = Boolean(appointment && remainingChanges === 0);
+  const remainingLabel = `${remainingChanges} changement${remainingChanges === 1 ? '' : 's'} restant${remainingChanges === 1 ? '' : 's'}`;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />
@@ -147,7 +153,7 @@ export default function AppointmentPage() {
                 <div>
                   <span className="badge badge-warning text-[10px]">Planification personnalisée</span>
                   <h3 className="font-display text-xl font-light text-[#0C1825]">
-                    Toutes les propositions automatiques ont été épuisées ({maxAttempts}/{maxAttempts})
+                    Toutes les propositions automatiques ont été épuisées
                   </h3>
                 </div>
               </div>
@@ -211,7 +217,7 @@ export default function AppointmentPage() {
                 </div>
                 <div>
                   <h2 className="text-base font-semibold text-[#0C1825]">
-                    {isConfirmed ? 'Rendez-vous confirmé' : 'Créneau proposé par la banque'}
+                    {isConfirmed ? 'Rendez-vous confirmé' : 'Demande acceptée — rendez-vous planifié'}
                   </h2>
                   <p className="text-xs text-[#3D5166]">Entretien technique et remise des pièces originales</p>
                 </div>
@@ -219,11 +225,11 @@ export default function AppointmentPage() {
 
               <div className="flex items-center gap-2">
                 <span className={`badge ${isConfirmed ? 'badge-success' : 'badge-warning'} text-xs`}>
-                  {isConfirmed ? 'Rendez-vous Confirmé & Verrouillé' : `Proposition ${currentAttempt} / ${maxAttempts}`}
+                  {isConfirmed ? 'Rendez-vous confirmé' : remainingLabel}
                 </span>
-                {!isConfirmed && (
+                {!isConfirmed && !isAtRescheduleLimit && (
                   <span className="text-[11px] text-[#3D5166] font-medium hidden sm:inline">
-                    (Max {maxAttempts} propositions)
+                    ({rescheduleCount}/{maxReschedules} utilisés)
                   </span>
                 )}
               </div>
@@ -264,6 +270,13 @@ export default function AppointmentPage() {
               </div>
             )}
 
+            {isAtRescheduleLimit && !isConfirmed && (
+              <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-950" role="status">
+                <p className="font-bold">Vous avez utilisé vos 4 changements de rendez-vous.</p>
+                <p className="mt-1">Contactez votre agence pour toute nouvelle modification. Le créneau affiché reste valide et peut encore être confirmé.</p>
+              </div>
+            )}
+
             {/* Confirmed checklist and embedded chat */}
             {isConfirmed && (
               <div className="space-y-6">
@@ -282,25 +295,6 @@ export default function AppointmentPage() {
                   </ul>
                 </div>
 
-                {/* Direct chat with advisor */}
-                <div className="p-6 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] space-y-4">
-                  <div className="flex items-center gap-2 pb-2 border-b border-[#E0E4E9]">
-                    <MessageCircle className="size-4 text-[#C0272D]" />
-                    <h4 className="text-xs font-bold text-[#0C1825]">
-                      Messagerie directe avec votre conseiller ({appointment.branch?.name ?? 'Agence BTS'})
-                    </h4>
-                  </div>
-                  <ReportChat
-                    applicationId={applicationId}
-                    currentSenderType="customer"
-                    getToken={getToken}
-                    initialMessages={reportMessages ?? []}
-                    onSend={async (body, file) => {
-                      const { message } = await sendReportMessageWithAttachment(applicationId, body, file);
-                      return message;
-                    }}
-                  />
-                </div>
               </div>
             )}
 
@@ -322,17 +316,43 @@ export default function AppointmentPage() {
                   <button
                     type="button"
                     onClick={() => setRejectOpen(true)}
-                    disabled={working || currentAttempt >= maxAttempts}
+                    disabled={working || !appointment.can_self_reschedule}
                     className="btn-outline text-xs"
                   >
-                    {currentAttempt >= maxAttempts
-                      ? `Nombre max de changements atteint (${maxAttempts}/${maxAttempts})`
-                      : `Changer de créneau (${remainingChances} essai(s) restant(s))`}
+                    {isAtRescheduleLimit ? '0 changement restant' : `Modifier le rendez-vous — ${remainingLabel}`}
                   </button>
                 </div>
                 <p className="text-[11px] text-[#3D5166]">
-                  * Une fois confirmé, le créneau ne pourra plus être modifié en ligne et ouvrira l&apos;espace de discussion directe avec votre agence.
+                  * Une fois confirmé, le créneau ne pourra plus être modifié en ligne.
                 </p>
+              </div>
+            )}
+
+            {isAtRescheduleLimit && !isConfirmed && (
+              <div className="space-y-4 rounded-xl border border-[#E0E4E9] bg-[#F4F6F8] p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#0C1825]">Discussion avec mon conseiller</h3>
+                    <p className="mt-1 text-xs text-[#3D5166]">Cette discussion est sécurisée et transmise uniquement à votre agence responsable.</p>
+                  </div>
+                  <Link
+                    href={`/applications/${applicationId}/report`}
+                    className="btn-outline inline-flex items-center justify-center gap-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#C0272D] focus:ring-offset-2"
+                  >
+                    <MessageCircle className="size-4" aria-hidden="true" />
+                    Contacter mon agence
+                  </Link>
+                </div>
+                <ReportChat
+                  applicationId={applicationId}
+                  currentSenderType="customer"
+                  getToken={getToken}
+                  initialMessages={reportMessages ?? []}
+                  onSend={async (body, file) => {
+                    const { message } = await sendReportMessageWithAttachment(applicationId, body, file);
+                    return message;
+                  }}
+                />
               </div>
             )}
           </div>
@@ -354,7 +374,7 @@ export default function AppointmentPage() {
                 Changer de créneau horaire ?
               </DialogTitle>
               <DialogDescription className="text-xs text-[#3D5166] pt-2 leading-relaxed">
-                Si vous refusez ce créneau, un horaire alternatif vous sera immédiatement attribué (<strong>Proposition {currentAttempt + 1}/{maxAttempts}</strong>). Si toutes les propositions sont épuisées, l&apos;espace de messagerie directe avec votre conseiller vous permettra de fixer un rendez-vous personnalisé.
+                Si vous confirmez, un nouveau créneau disponible vous sera immédiatement attribué. Cette opération utilisera le changement n° <strong>{rescheduleCount + 1} sur {maxReschedules}</strong>.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 pt-4">

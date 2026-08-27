@@ -2,9 +2,7 @@ import Link from 'next/link';
 import {
   ArrowRight,
   Briefcase,
-  Building2,
   CalendarCheck,
-  Check,
   ChevronRight,
   ClipboardList,
   CreditCard,
@@ -25,7 +23,6 @@ import {
   Users,
   Bell,
 } from 'lucide-react';
-import { Logo } from '@/components/logo';
 import { LandingHeader } from '@/components/landing-header';
 import { LandingFooter } from '@/components/landing-footer';
 import { CreditSimulator } from '@/components/credit-simulator';
@@ -260,7 +257,6 @@ export default function Home() {
           <div className="mx-auto max-w-7xl px-4 sm:px-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-white/10">
               {QUICK_ACTIONS.map((action, i) => {
-                const Icon = action.icon;
                 return (
                   <Link
                     key={i}

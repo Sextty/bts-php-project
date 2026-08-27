@@ -19,8 +19,16 @@ class EnsureCustomerUser
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user() instanceof User) {
+        $user = $request->user();
+
+        if (! $user instanceof User) {
             throw new ApiException(ApiErrorCode::Forbidden, 'This action requires a customer account.');
+        }
+
+        if ($user->isBanned() || $user->status !== 'active') {
+            $user->currentAccessToken()?->delete();
+
+            throw new ApiException(ApiErrorCode::Forbidden, 'This customer account is suspended.');
         }
 
         return $next($request);

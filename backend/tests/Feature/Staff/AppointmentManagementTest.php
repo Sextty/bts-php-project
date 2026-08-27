@@ -18,7 +18,7 @@ class AppointmentManagementTest extends TestCase
     public function test_staff_can_list_appointments_and_see_summary_stats(): void
     {
         $branch = Branch::factory()->create(['name' => 'Agence BTS Ariana']);
-        $staff = StaffUser::factory()->create();
+        $staff = StaffUser::factory()->forBranch($branch)->create();
 
         $user = User::factory()->create(['first_name' => 'Mohamed', 'last_name' => 'Ben Ali', 'phone' => '+21698123456']);
         $app = CreditApplication::factory()->create([
@@ -79,7 +79,8 @@ class AppointmentManagementTest extends TestCase
             'phone' => '73222333',
             'fax' => '73222444',
         ]);
-        $staff = StaffUser::factory()->create();
+        $otherBranch = Branch::factory()->create(['name' => 'Agence BTS Hors périmètre']);
+        $staff = StaffUser::factory()->forBranch($branch)->create();
 
         $app = CreditApplication::factory()->create(['branch_id' => $branch->id]);
         Appointment::create([
@@ -98,6 +99,8 @@ class AppointmentManagementTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('success', true)
+            ->assertJsonPath('data.total_branches', 1)
+            ->assertJsonPath('data.branches.0.id', $branch->id)
             ->assertJsonStructure([
                 'success',
                 'data' => [
@@ -117,6 +120,33 @@ class AppointmentManagementTest extends TestCase
                     'total_branches',
                 ],
             ]);
+        $this->assertNotSame($otherBranch->id, $response->json('data.branches.0.id'));
+    }
+
+    public function test_staff_appointments_exclude_other_branch_records(): void
+    {
+        $branch = Branch::factory()->create();
+        $otherBranch = Branch::factory()->create();
+        $staff = StaffUser::factory()->forBranch($branch)->create();
+
+        foreach ([$branch, $otherBranch] as $appointmentBranch) {
+            $application = CreditApplication::factory()->create(['branch_id' => $appointmentBranch->id]);
+            Appointment::create([
+                'credit_application_id' => $application->id,
+                'branch_id' => $appointmentBranch->id,
+                'attempt_number' => 1,
+                'scheduled_date' => now()->addDays(3)->toDateString(),
+                'scheduled_time' => '14:00:00',
+                'status' => Appointment::STATUS_ACCEPTED,
+            ]);
+        }
+
+        $this->actingAs($staff, 'sanctum')
+            ->getJson('/api/staff/appointments')
+            ->assertOk()
+            ->assertJsonPath('data.meta.total', 1)
+            ->assertJsonPath('data.stats.total', 1)
+            ->assertJsonPath('data.appointments.0.branch.id', $branch->id);
     }
 
     public function test_customer_token_cannot_access_staff_appointments(): void

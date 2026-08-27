@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Runs the Validation-1 checks (Part 1 spec, Étape 4): required sections present, at least one
- * supporting document uploaded, and — when Gemini is configured — every unverified document
+ * supporting document uploaded, and — when a cloud AI is configured — every unverified document
  * passes the AI authenticity/field-matching check. FormRequests already enforce field-level
  * "required" at the moment each step is saved (Client/CreditRequest/Project can't be persisted
  * incomplete), so this service's job is confirming all three sections and a document actually
@@ -32,21 +32,22 @@ class CreditApplicationValidationService
         $errors = [];
 
         if (! $application->client) {
-            $errors[] = 'Client information (Étape 1) is not complete.';
+            $errors[] = 'Informations du demandeur incomplètes : terminez l’étape 1.';
         }
 
         if (! $application->creditRequest) {
-            $errors[] = 'Credit request information (Étape 2) is not complete.';
+            $errors[] = 'Informations du crédit incomplètes : terminez l’étape 2.';
         }
 
         if (! $application->project) {
-            $errors[] = 'Project information (Étape 3) is not complete.';
+            $errors[] = 'Informations du projet incomplètes : terminez l’étape 3.';
         }
 
-        // One upload zone, any type: the customer attaches whatever documents they need, so the
-        // only requirement is that at least one document exists before locking.
-        if ($application->documents()->count() === 0) {
-            $errors[] = 'At least one supporting document is required.';
+        // Strict by default. A local synthetic/demo environment can explicitly disable this
+        // when its attachment step is intentionally hidden; production remains protected.
+        if (config('credit_documents.require_at_least_one_for_validation', true)
+            && $application->documents()->count() === 0) {
+            $errors[] = 'Document manquant : ajoutez au moins un justificatif avant de lancer la vérification.';
         }
 
         return $errors;
@@ -88,7 +89,7 @@ class CreditApplicationValidationService
      *
      * Blocking rules: an explicit `is_valid: false` verdict (fake/tampered document or critical
      * field mismatch) produces a human-readable error per document, which blocks validation-1.
-     * A provider failure (Gemini down, no API key configured, malformed response) is logged and
+     * A provider failure (cloud AI down, no API key configured, malformed response) is logged and
      * leaves ai_verified_at null instead of blocking — staff simply see "not yet checked" for
      * that document instead of a verdict. Documents already checked (ai_verified_at set) are
      * skipped.
@@ -97,12 +98,47 @@ class CreditApplicationValidationService
      */
     private function verifyDocuments(CreditApplication $application): array
     {
+        if (config('services.document_verification.provider') === 'local') {
+            $application->documents()
+                ->whereNull('ai_verified_at')
+                ->update(['ai_processing_status' => 'failed']);
+
+            Log::info('[document-verification] cloud verification disabled; deferred to human review', [
+                'application_id' => $application->id,
+            ]);
+
+            return [];
+        }
+
         $errors = [];
         $client = $application->client;
+        $documents = $application->documents()
+            ->where(function ($query) {
+                $query->whereNull('ai_verified_at')
+                    ->orWhere('ai_is_valid', false);
+            })
+            ->get();
+        $budgetSeconds = max(1, (int) config('services.document_verification.validation_budget_seconds', 20));
+        $deadline = microtime(true) + $budgetSeconds;
 
-        foreach ($application->documents()->whereNull('ai_verified_at')->get() as $document) {
+        foreach ($documents as $document) {
+            $remainingSeconds = (int) ceil($deadline - microtime(true));
+            if ($remainingSeconds < 1) {
+                $documents
+                    ->whereNull('ai_verified_at')
+                    ->each(fn (Document $pending) => $pending->forceFill(['ai_processing_status' => 'failed'])->save());
+
+                Log::warning('[document-verification] validation budget exhausted', [
+                    'application_id' => $application->id,
+                    'budget_seconds' => $budgetSeconds,
+                    'remaining_documents' => $documents->whereNull('ai_verified_at')->count(),
+                ]);
+
+                break;
+            }
+
             try {
-                $result = $this->documentVerification->verify($document, $client);
+                $result = $this->documentVerification->verify($document, $client, $remainingSeconds);
 
                 $document->update([
                     'ai_verified_at' => now(),
@@ -122,8 +158,8 @@ class CreditApplicationValidationService
                     $this->notifications->notifyUser(
                         $application->user,
                         'document.rejected',
-                        'Document flagged for review',
-                        'Your document "'.$document->original_filename.'" could not be confirmed as genuine. Please check it and upload a replacement.',
+                        'Document à vérifier',
+                        'Le document « '.$document->original_filename.' » n’a pas pu être confirmé comme authentique. Vérifiez-le et joignez une nouvelle version.',
                         ['application_id' => $application->id, 'document_id' => $document->id],
                         dedupeKey: 'document-'.$document->id,
                     );
@@ -138,6 +174,21 @@ class CreditApplicationValidationService
                 // can distinguish "checked and needs a human" from "never got a verdict" on the
                 // review surface, while leaving ai_verified_at null to mark it unverified.
                 $document->forceFill(['ai_processing_status' => 'failed'])->save();
+
+                // A temporary provider failure must never turn a previously rejected document
+                // into a passing one on retry. Keep blocking it with the last known French cause
+                // until the customer uploads a corrected file and a new verdict succeeds.
+                if ($document->ai_is_valid === false) {
+                    $errors[] = $this->documentError($document, new DocumentVerificationResult(
+                        false,
+                        $document->document_type,
+                        $document->ai_confidence ?? 'low',
+                        $document->ai_comment ?? '',
+                        $document->ai_extracted_fields ?? [],
+                        $document->ai_mismatches ?? [],
+                        $document->ai_detected_issues ?? [],
+                    ));
+                }
             }
         }
 
@@ -148,25 +199,49 @@ class CreditApplicationValidationService
     {
         $labels = config('credit_documents.ai_field_labels', []);
         $details = [];
+        $hasUnreadableCriticalField = false;
 
         foreach ($result->mismatches as $mismatch) {
             if ($mismatch['severity'] !== 'critical') {
                 continue;
             }
 
+            $extracted = trim((string) ($mismatch['extracted'] ?? ''));
+            if ($extracted === '') {
+                $hasUnreadableCriticalField = true;
+
+                continue;
+            }
+
             $label = $labels[$mismatch['field']] ?? $mismatch['field'];
             $details[] = sprintf(
-                '%s on the document does not match the form (expected "%s", found "%s")',
+                '%s différent : formulaire « %s », document « %s »',
                 $label,
-                $mismatch['expected'] ?? '—',
-                $mismatch['extracted'] ?? '—',
+                trim((string) ($mismatch['expected'] ?? 'non renseigné')),
+                $extracted,
             );
         }
 
+        // A wrong or unreadable file often makes every identity field come back null. Listing
+        // five empty "expected/detected" mismatches hides the useful AI explanation. In that
+        // case, show the direct cause once and tell the customer exactly what to upload next.
         if (! $details) {
-            $details[] = $result->comment ?: 'document could not be confirmed as genuine.';
+            $details[] = $result->comment ?: 'Ce fichier ne permet pas de vérifier le justificatif demandé';
         }
 
-        return sprintf('Document "%s": AI verification failed — %s.', $document->original_filename, implode('; ', $details));
+        $documentType = config(
+            "credit_documents.types.{$document->document_type}.label",
+            'justificatif demandé',
+        );
+
+        $details[] = $hasUnreadableCriticalField || count($details) === 1
+            ? "Remplacez ce fichier par une copie nette et complète du document suivant : {$documentType}"
+            : 'Corrigez les informations du formulaire ou remplacez ce document';
+
+        return sprintf(
+            'Document « %s » : %s.',
+            $document->original_filename,
+            rtrim(implode('; ', $details), ". \t\n\r\0\x0B"),
+        );
     }
 }

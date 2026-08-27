@@ -15,10 +15,6 @@ import {
   ArrowRight,
   MessageCircle,
   FileText,
-  ShieldAlert,
-  Info,
-  Layers,
-  Sparkles,
 } from 'lucide-react';
 import { DashboardHeader } from '@/components/dashboard-header';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
@@ -55,8 +51,6 @@ import {
 } from '@/components/ui/dialog';
 
 const ACCEPTED_STATUSES: ApplicationStatus[] = [
-  'APPROVED',
-  'STAFF_APPROVED',
   'APPOINTMENT_PROPOSED',
   'APPOINTMENT_CONFIRMED',
   'APPOINTMENT_LOCKED',
@@ -87,12 +81,8 @@ export default function AppointmentsPage() {
   const [appointment, setAppointment] = useState<AppointmentDto | null>(null);
 
   const [selectedBranch, setSelectedBranch] = useState<string>('Agence BTS Tunis');
-  const [preferredDate, setPreferredDate] = useState<string>('');
-  const [preferredTimeSlot, setPreferredTimeSlot] = useState<string>('09:30');
-
   const [reportMessages, setReportMessages] = useState<ReportMessageDto[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [appointmentLoading, setAppointmentLoading] = useState(false);
   const [actionWorking, setActionWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -131,13 +121,8 @@ export default function AppointmentsPage() {
 
   // Load appointment details and report messages when selected application changes
   useEffect(() => {
-    if (!selectedAppId) {
-      setAppointment(null);
-      setReportMessages(null);
-      return;
-    }
+    if (!selectedAppId) return;
 
-    setAppointmentLoading(true);
     Promise.allSettled([
       getAppointment(selectedAppId).then(({ appointment }) => {
         setAppointment(appointment);
@@ -148,7 +133,7 @@ export default function AppointmentsPage() {
       getReportMessages(selectedAppId).then(({ messages }) => {
         setReportMessages(messages);
       }),
-    ]).finally(() => setAppointmentLoading(false));
+    ]);
   }, [selectedAppId]);
 
   async function handleAccept() {
@@ -185,7 +170,7 @@ export default function AppointmentsPage() {
           a.id === selectedAppId ? { ...a, status: application_status as ApplicationStatus } : a
         )
       );
-      if (application_status === 'APPOINTMENT_LOCKED') {
+      if (application_status === 'APPOINTMENT_LOCKED' || appointment?.remaining_reschedules === 0) {
         getReportMessages(selectedAppId)
           .then(({ messages }) => setReportMessages(messages))
           .catch(() => {});
@@ -205,12 +190,14 @@ export default function AppointmentsPage() {
   const isAccepted = eligibleApplications.length > 0;
   const isAppointmentConfirmed = appointment?.status === 'accepted' || (activeSelectedApp?.status as string) === 'APPOINTMENT_CONFIRMED';
   const isLockedOut = (activeSelectedApp?.status as string) === 'APPOINTMENT_LOCKED';
-  const maxAttempts = appointment?.max_attempts ?? 5;
-  const currentAttempt = appointment?.attempt_number ?? 1;
-  const remainingChances = Math.max(0, maxAttempts - currentAttempt);
+  const maxReschedules = appointment?.max_reschedules ?? 4;
+  const rescheduleCount = appointment?.reschedule_count ?? 0;
+  const remainingChanges = appointment?.remaining_reschedules ?? maxReschedules;
+  const isAtRescheduleLimit = Boolean(appointment && remainingChanges === 0);
+  const remainingLabel = `${remainingChanges} changement${remainingChanges === 1 ? '' : 's'} restant${remainingChanges === 1 ? '' : 's'}`;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-5xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href="/dashboard" label="Retour au tableau de bord" />
@@ -346,7 +333,7 @@ export default function AppointmentsPage() {
                 <div>
                   <span className="badge badge-warning text-[10px]">Planification personnalisée requise</span>
                   <h3 className="font-display text-xl font-light text-[#0C1825]">
-                    Toutes les propositions automatiques ont été épuisées ({maxAttempts}/{maxAttempts})
+                    Toutes les propositions automatiques ont été épuisées
                   </h3>
                 </div>
               </div>
@@ -498,11 +485,11 @@ export default function AppointmentsPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`badge ${isAppointmentConfirmed ? 'badge-success' : 'badge-warning'} text-xs`}>
-                          {isAppointmentConfirmed ? 'Rendez-vous Confirmé & Verrouillé' : `Proposition ${currentAttempt} / ${maxAttempts}`}
+                          {isAppointmentConfirmed ? 'Rendez-vous confirmé' : remainingLabel}
                         </span>
-                        {!isAppointmentConfirmed && (
+                        {!isAppointmentConfirmed && !isAtRescheduleLimit && (
                           <span className="text-[11px] text-[#3D5166] font-medium hidden sm:inline">
-                            (Max {maxAttempts} propositions)
+                            ({rescheduleCount}/{maxReschedules} utilisés)
                           </span>
                         )}
                       </div>
@@ -547,24 +534,47 @@ export default function AppointmentsPage() {
                         <button
                           type="button"
                           onClick={() => setRejectOpen(true)}
-                          disabled={actionWorking || currentAttempt >= maxAttempts}
+                          disabled={actionWorking || !appointment.can_self_reschedule}
                           className="btn-outline text-xs inline-flex items-center justify-center gap-2"
                         >
-                          {currentAttempt >= maxAttempts
-                            ? `Nombre max de changements atteint (${maxAttempts}/${maxAttempts})`
-                            : `Changer de créneau (${remainingChances} essai(s) restant(s))`}
+                          {isAtRescheduleLimit ? '0 changement restant' : `Modifier le rendez-vous — ${remainingLabel}`}
                         </button>
                       </div>
                       <p className="text-[11px] text-[#3D5166] text-center sm:text-left">
-                        * Une fois confirmé, le créneau ne pourra plus être modifié en ligne et ouvrira l&apos;espace de discussion directe avec votre agence.
+                        * Une fois confirmé, le créneau ne pourra plus être modifié en ligne.
                       </p>
                     </div>
                   )}
 
-                  {/* Confirmed checklist and embedded chat */}
+                  {isAtRescheduleLimit && !isAppointmentConfirmed && (
+                    <div className="space-y-4 rounded-xl border border-amber-300 bg-amber-50 p-5 text-xs text-amber-950" role="status">
+                      <div>
+                        <p className="font-bold">Vous avez utilisé vos 4 changements de rendez-vous.</p>
+                        <p className="mt-1">Contactez votre agence pour toute nouvelle modification. Votre créneau actuel reste disponible à la confirmation.</p>
+                      </div>
+                      <Link
+                        href={`/applications/${selectedAppId}/report`}
+                        className="btn-outline inline-flex items-center justify-center gap-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#C0272D] focus:ring-offset-2"
+                      >
+                        <MessageCircle className="size-4" aria-hidden="true" />
+                        Contacter mon agence
+                      </Link>
+                      <ReportChat
+                        applicationId={selectedAppId!}
+                        currentSenderType="customer"
+                        getToken={getToken}
+                        initialMessages={reportMessages ?? []}
+                        onSend={async (body, file) => {
+                          const { message } = await sendReportMessageWithAttachment(selectedAppId!, body, file);
+                          return message;
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Confirmed appointment checklist */}
                   {isAppointmentConfirmed && (
-                    <div className="space-y-6">
-                      <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3 text-xs text-emerald-950">
+                    <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3 text-xs text-emerald-950">
                         <div className="flex items-center gap-2 font-bold text-emerald-900">
                           <CheckCircle2 className="size-4 text-emerald-600" />
                           <span>Votre entretien en agence est validé et verrouillé !</span>
@@ -577,83 +587,12 @@ export default function AppointmentsPage() {
                           <li>Factures proforma / devis originaux</li>
                           <li>Justificatif de domicile récent</li>
                         </ul>
-                      </div>
-
-                      {/* Direct chat with advisor */}
-                      <div className="p-6 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] space-y-4">
-                        <div className="flex items-center gap-2 pb-2 border-b border-[#E0E4E9]">
-                          <MessageCircle className="size-4 text-[#C0272D]" />
-                          <h4 className="text-xs font-bold text-[#0C1825]">
-                            Messagerie directe avec votre conseiller ({selectedBranch})
-                          </h4>
-                        </div>
-                        <ReportChat
-                          applicationId={selectedAppId!}
-                          currentSenderType="customer"
-                          getToken={getToken}
-                          initialMessages={reportMessages ?? []}
-                          onSend={async (body, file) => {
-                            const { message } = await sendReportMessageWithAttachment(selectedAppId!, body, file);
-                            return message;
-                          }}
-                        />
-                      </div>
                     </div>
                   )}
                 </div>
               ) : (
-                /* No slot generated yet - manual date preference */
-                <div className="space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label htmlFor="pref_date" className="text-xs font-semibold text-[#0C1825]">
-                        Date souhaitée <span className="text-[#C0272D]">*</span>
-                      </label>
-                      <input
-                        id="pref_date"
-                        type="date"
-                        value={preferredDate}
-                        onChange={(e) => setPreferredDate(e.target.value)}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg px-3.5 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D]"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label htmlFor="pref_time" className="text-xs font-semibold text-[#0C1825]">
-                        Créneau horaire <span className="text-[#C0272D]">*</span>
-                      </label>
-                      <select
-                        id="pref_time"
-                        value={preferredTimeSlot}
-                        onChange={(e) => setPreferredTimeSlot(e.target.value)}
-                        className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg px-3.5 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D]"
-                      >
-                        <option value="09:00">09h00 – 10h00 (Matin)</option>
-                        <option value="10:30">10h30 – 11h30 (Matin)</option>
-                        <option value="14:00">14h00 – 15h00 (Après-midi)</option>
-                        <option value="15:30">15h30 – 16h30 (Après-midi)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] text-xs text-[#3D5166] flex items-center gap-2.5">
-                    <Info className="size-4 text-[#C0272D] shrink-0" />
-                    <span>
-                      Votre agence régionale validera ce créneau et vous notifiera par SMS / notification dans les 24h ouvrées.
-                    </span>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <Link
-                      href={`/applications/${selectedAppId}/report`}
-                      className="btn-red text-xs inline-flex items-center gap-2 shadow-xs"
-                      style={{ padding: '10px 24px' }}
-                    >
-                      <CalendarCheck2 className="size-4" />
-                      <span>Transmettre ma préférence de rendez-vous</span>
-                    </Link>
-                  </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900" role="status">
+                  Le rendez-vous automatique est en cours de préparation. Actualisez la page dans quelques instants ou contactez votre agence si le problème persiste.
                 </div>
               )}
             </div>
@@ -668,7 +607,7 @@ export default function AppointmentsPage() {
                 Changer de créneau horaire ?
               </DialogTitle>
               <DialogDescription className="text-xs text-[#3D5166] pt-2 leading-relaxed">
-                Si vous refusez ce créneau, un horaire alternatif vous sera immédiatement attribué (<strong>Proposition {currentAttempt + 1}/{maxAttempts}</strong>). Si toutes les propositions sont épuisées, l&apos;espace de messagerie directe avec votre conseiller vous permettra de fixer un rendez-vous personnalisé.
+                Un nouveau créneau disponible vous sera immédiatement attribué. Cette opération utilisera le changement n° <strong>{rescheduleCount + 1} sur {maxReschedules}</strong>.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2 pt-4">

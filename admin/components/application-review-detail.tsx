@@ -23,11 +23,9 @@ import {
   Ban,
   Shield,
   Loader2,
-  Eye,
 } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,7 +41,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { StaffApplicationDto } from '@/lib/api/staff';
 import { statusLabel, statusColor } from '@/lib/status-labels';
 import { downloadStaffDocument } from '@/lib/api/documents';
-import { getStaffToken } from '@/lib/auth/staff-token';
+import { saveBlob } from '@/lib/download';
 
 export function ApplicationReviewDetail({
   application,
@@ -64,10 +62,25 @@ export function ApplicationReviewDetail({
 }) {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState('');
+  const [downloadingDocumentId, setDownloadingDocumentId] = useState<number | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDocumentDownload(documentId: number, filename: string) {
+    setDownloadingDocumentId(documentId);
+    setDownloadError(null);
+    try {
+      const blob = await downloadStaffDocument(application.id, documentId);
+      saveBlob(blob, filename);
+    } catch (downloadFailure) {
+      setDownloadError(downloadFailure instanceof Error ? downloadFailure.message : 'Impossible de télécharger le document.');
+    } finally {
+      setDownloadingDocumentId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
-      <ErrorAlert message={error} />
+      <ErrorAlert message={error ?? downloadError} />
 
       {/* ── Page Title ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -124,6 +137,52 @@ export function ApplicationReviewDetail({
                   value={`${Number(application.credit_request.montant_global_sollicite).toLocaleString('fr-FR')} ${application.credit_request.code_devise}`}
                   bold
                 />
+
+                {/* Financing Breakdown */}
+                {(Number(application.credit_request.montant_eqp) > 0 ||
+                  Number(application.credit_request.montant_fdr) > 0 ||
+                  Number(application.credit_request.montant_amg) > 0 ||
+                  Number(application.credit_request.montant_chp) > 0) && (
+                  <div className="sm:col-span-2 pt-2 border-t border-gray-100">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+                      Ventilation Détaillée du Financement (EQP, FDR, AMG, CHP)
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                      {Number(application.credit_request.montant_eqp) > 0 && (
+                        <div className="p-2 rounded-lg bg-purple-50 border border-purple-200">
+                          <span className="text-[10px] text-purple-700 font-medium">Équipement (EQP)</span>
+                          <p className="font-mono font-bold text-[#0C1825]">
+                            {Number(application.credit_request.montant_eqp).toLocaleString('fr-FR')} TND
+                          </p>
+                        </div>
+                      )}
+                      {Number(application.credit_request.montant_fdr) > 0 && (
+                        <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
+                          <span className="text-[10px] text-blue-700 font-medium">Fonds Roulement (FDR)</span>
+                          <p className="font-mono font-bold text-[#0C1825]">
+                            {Number(application.credit_request.montant_fdr).toLocaleString('fr-FR')} TND
+                          </p>
+                        </div>
+                      )}
+                      {Number(application.credit_request.montant_amg) > 0 && (
+                        <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                          <span className="text-[10px] text-amber-700 font-medium">Aménagement (AMG)</span>
+                          <p className="font-mono font-bold text-[#0C1825]">
+                            {Number(application.credit_request.montant_amg).toLocaleString('fr-FR')} TND
+                          </p>
+                        </div>
+                      )}
+                      {Number(application.credit_request.montant_chp) > 0 && (
+                        <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                          <span className="text-[10px] text-emerald-700 font-medium">Cheptel (CHP)</span>
+                          <p className="font-mono font-bold text-[#0C1825]">
+                            {Number(application.credit_request.montant_chp).toLocaleString('fr-FR')} TND
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </SectionCard>
           )}
@@ -160,9 +219,6 @@ export function ApplicationReviewDetail({
                   const isImg = doc.mime_type.startsWith('image/');
                   const isPdf = doc.mime_type === 'application/pdf';
                   const Icon = isImg ? FileImage : isPdf ? FileText : File;
-                  const downloadUrl = downloadStaffDocument(application.id, doc.id);
-                  const token = typeof window !== 'undefined' ? getStaffToken() : null;
-
                   return (
                     <li key={doc.id} className="px-5 py-3 space-y-2">
                       <div className="flex items-center justify-between gap-2">
@@ -180,19 +236,24 @@ export function ApplicationReviewDetail({
                             </div>
                           </div>
                         </div>
-                        <a
-                          href={`${downloadUrl}?token=${token ?? ''}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => handleDocumentDownload(doc.id, doc.original_filename)}
+                          disabled={downloadingDocumentId === doc.id}
                           className="size-7 rounded-lg flex items-center justify-center text-[#3D5166] hover:text-[#C0272D] hover:bg-[#FDF2F2] transition-colors shrink-0"
                           title="Télécharger"
+                          aria-label={`Télécharger ${doc.original_filename}`}
                         >
-                          <Download className="size-3.5" />
-                        </a>
+                          {downloadingDocumentId === doc.id ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Download className="size-3.5" />
+                          )}
+                        </button>
                       </div>
                       {doc.ai_comment && (
                         <p className="text-[11px] text-[#3D5166] pl-9">
-                          IA ({doc.ai_confidence}) : {doc.ai_comment}
+                          IA ({confidenceLabel(doc.ai_confidence)}) : {doc.ai_comment}
                         </p>
                       )}
                       {doc.ai_mismatches && doc.ai_mismatches.length > 0 && (
@@ -202,7 +263,7 @@ export function ApplicationReviewDetail({
                               <span className={`inline-flex shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border ${
                                 mismatch.severity === 'critical' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'
                               }`}>
-                                {mismatch.severity}
+                                {mismatch.severity === 'critical' ? 'Bloquant' : 'Avertissement'}
                               </span>
                               <span className="text-[#3D5166]">
                                 <span className="font-semibold text-[#0C1825]">{mismatchFieldLabel(mismatch.field)}</span>
@@ -251,7 +312,7 @@ export function ApplicationReviewDetail({
                 <Alert className="mt-3 border-amber-500/30 bg-amber-500/10 text-amber-950">
                   <AlertCircle className="size-4 text-amber-600" />
                   <AlertDescription className="text-[11px] font-medium">
-                    Programmé à une date ultérieure car la capacité quotidienne de l'agence est atteinte.
+                    Programmé à une date ultérieure car la capacité quotidienne de l’agence est atteinte.
                   </AlertDescription>
                 </Alert>
               )}
@@ -442,6 +503,13 @@ const MISMATCH_FIELD_LABELS: Record<string, string> = {
 
 function mismatchFieldLabel(field: string): string {
   return MISMATCH_FIELD_LABELS[field] ?? field;
+}
+
+function confidenceLabel(confidence: 'high' | 'medium' | 'low' | null): string {
+  if (confidence === 'high') return 'élevée';
+  if (confidence === 'medium') return 'moyenne';
+  if (confidence === 'low') return 'faible';
+  return 'non définie';
 }
 
 function formatAppointmentDate(dateStr: string): string {

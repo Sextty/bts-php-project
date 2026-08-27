@@ -3,13 +3,19 @@
 namespace Tests\Feature\CreditApplication;
 
 use App\Events\ReportMessageSent;
+use App\Models\Appointment;
+use App\Models\AsyncOutboxEvent;
 use App\Models\Branch;
 use App\Models\CreditApplication;
+use App\Models\ReportMessage;
 use App\Models\StaffUser;
 use App\Models\User;
+use App\Services\DocumentSecurity\MalwareScanner;
+use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -26,17 +32,24 @@ class ReportChatTest extends TestCase
     {
         parent::setUp();
         Storage::fake('documents');
-        \Illuminate\Support\Facades\Http::fake([
-            'generativelanguage.googleapis.com/*' => \Illuminate\Support\Facades\Http::response([
-                'candidates' => [['content' => ['parts' => [['text' => json_encode(['is_valid' => true])]]]]],
+        config(['services.document_verification.provider' => 'gemini']);
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => json_encode([
+                    'is_valid' => true,
+                    'confidence' => 'high',
+                    'comment' => 'Synthetic document accepted for test.',
+                    'extracted_fields' => [],
+                    'mismatches' => [],
+                ])]]]]],
             ], 200),
         ]);
         $this->customer = User::factory()->create();
         $this->staff = StaffUser::factory()->create();
     }
 
-    /** Drives a fresh application all the way to APPOINTMENT_LOCKED (3 rejections). */
-    private function lockedApplication(): CreditApplication
+    /** Drives a fresh application to the four-change discussion escalation threshold. */
+    private function lockedApplication(int $reschedules = Appointment::MAX_RESCHEDULES): CreditApplication
     {
         Branch::factory()->default()->create();
 
@@ -73,11 +86,14 @@ class ReportChatTest extends TestCase
 
         $this->postJson("/api/applications/{$id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
 
         $this->postJson("/api/applications/{$id}/validation-1");
         $this->postJson("/api/applications/{$id}/validation-2");
+
+        $application = CreditApplication::findOrFail($id);
+        $this->staff->update(['branch_id' => $application->branch_id]);
 
         $admin = StaffUser::factory()->admin()->create();
 
@@ -88,11 +104,11 @@ class ReportChatTest extends TestCase
         $this->postJson("/api/staff/applications/{$id}/admin-approve");
 
         Sanctum::actingAs($this->customer, ['*']);
-        for ($i = 0; $i < \App\Models\Appointment::MAX_ATTEMPTS; $i++) {
-            $this->postJson("/api/applications/{$id}/appointment/reject");
+        for ($i = 0; $i < $reschedules; $i++) {
+            $this->postJson("/api/applications/{$id}/appointment/reject")->assertOk();
         }
 
-        return CreditApplication::findOrFail($id);
+        return $application->fresh();
     }
 
     public function test_customer_cannot_message_before_the_application_is_locked(): void
@@ -119,19 +135,71 @@ class ReportChatTest extends TestCase
             ->assertJsonPath('data.message.sender_type', 'customer')
             ->assertJsonPath('data.message.body', 'None of the proposed times work for me, can someone call me?');
 
-        Event::assertDispatched(ReportMessageSent::class, function (ReportMessageSent $event) use ($application) {
-            $channels = $event->broadcastOn();
-
-            // Must be the private channel the frontend actually subscribes to (echo.private
-            // prepends "private-"); a channel without the prefix would be public in Reverb.
-            return count($channels) === 1
-                && $channels[0] instanceof \Illuminate\Broadcasting\PrivateChannel
-                && $channels[0]->name === "private-application.{$application->id}.report";
-        });
+        $message = ReportMessage::findOrFail($response->json('data.message.id'));
+        $channels = (new ReportMessageSent($message))->broadcastOn();
+        $this->assertCount(1, $channels);
+        $this->assertInstanceOf(PrivateChannel::class, $channels[0]);
+        $this->assertSame("private-application.{$application->id}.report", $channels[0]->name);
+        $this->assertDatabaseHas('async_outbox_events', [
+            'type' => 'report_message.broadcast',
+            'aggregate_id' => $message->id,
+        ]);
 
         $this->getJson("/api/applications/{$application->id}/report/messages")
             ->assertOk()
             ->assertJsonCount(1, 'data.messages');
+    }
+
+    public function test_appointment_discussion_opens_only_after_four_successful_reschedules(): void
+    {
+        $application = $this->lockedApplication(0);
+
+        for ($count = 0; $count < Appointment::MAX_RESCHEDULES; $count++) {
+            Sanctum::actingAs($this->customer, ['*']);
+            $this->getJson("/api/applications/{$application->id}/report/messages")
+                ->assertStatus(404)
+                ->assertJsonPath('error.code', 'REPORT_NOT_OPEN');
+
+            Sanctum::actingAs($this->staff, ['*']);
+            $ids = collect($this->getJson('/api/staff/reports')->assertOk()->json('data.applications'))
+                ->pluck('id');
+            $this->assertFalse($ids->contains($application->id));
+
+            Sanctum::actingAs($this->customer, ['*']);
+            $this->postJson("/api/applications/{$application->id}/appointment/reject")
+                ->assertOk()
+                ->assertJsonPath('data.appointment.reschedule_count', $count + 1)
+                ->assertJsonPath(
+                    'data.appointment.remaining_reschedules',
+                    Appointment::MAX_RESCHEDULES - $count - 1
+                );
+        }
+
+        $this->getJson("/api/applications/{$application->id}/report/messages")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.messages');
+
+        Sanctum::actingAs($this->staff, ['*']);
+        $ids = collect($this->getJson('/api/staff/reports')->assertOk()->json('data.applications'))
+            ->pluck('id');
+        $this->assertTrue($ids->contains($application->id));
+    }
+
+    public function test_confirmed_appointment_without_messages_is_not_a_discussion_case(): void
+    {
+        $application = $this->lockedApplication(0);
+
+        Sanctum::actingAs($this->customer, ['*']);
+        $this->postJson("/api/applications/{$application->id}/appointment/accept")->assertOk();
+
+        $this->getJson("/api/applications/{$application->id}/report/messages")
+            ->assertStatus(404)
+            ->assertJsonPath('error.code', 'REPORT_NOT_OPEN');
+
+        Sanctum::actingAs($this->staff, ['*']);
+        $ids = collect($this->getJson('/api/staff/reports')->assertOk()->json('data.applications'))
+            ->pluck('id');
+        $this->assertFalse($ids->contains($application->id));
     }
 
     public function test_staff_sees_locked_applications_and_can_reply(): void
@@ -198,6 +266,44 @@ class ReportChatTest extends TestCase
             ->assertCreated();
     }
 
+    public function test_staff_or_system_message_does_not_block_the_first_customer_message(): void
+    {
+        Event::fake([ReportMessageSent::class]);
+        $application = $this->lockedApplication();
+        $application->reportMessages()->create([
+            'sender_type' => ReportMessage::SENDER_STAFF,
+            'staff_user_id' => $this->staff->id,
+            'body' => '📅 Le dossier est maintenant disponible pour échange.',
+        ]);
+
+        Sanctum::actingAs($this->customer, ['*']);
+        $this->postJson("/api/applications/{$application->id}/report/messages", [
+            'body' => 'Premier vrai message du client.',
+        ])->assertCreated();
+    }
+
+    public function test_only_assigned_branch_sees_fresh_eligible_case_among_historical_cases(): void
+    {
+        $application = $this->lockedApplication();
+
+        CreditApplication::factory()->count(30)->create([
+            'branch_id' => $application->branch_id,
+            'status' => CreditApplication::STATUS_CANCELLED,
+            'updated_at' => now()->subDay(),
+        ]);
+
+        Sanctum::actingAs($this->staff, ['*']);
+        $response = $this->getJson('/api/staff/reports')->assertOk();
+        $this->assertContains($application->id, collect($response->json('data.applications'))->pluck('id')->all());
+
+        $otherBranch = Branch::factory()->create();
+        $otherStaff = StaffUser::factory()->create(['branch_id' => $otherBranch->id]);
+        Sanctum::actingAs($otherStaff, ['*']);
+        $otherResponse = $this->getJson('/api/staff/reports')->assertOk();
+        $this->assertNotContains($application->id, collect($otherResponse->json('data.applications'))->pluck('id')->all());
+        $this->getJson("/api/staff/reports/{$application->id}/messages")->assertForbidden();
+    }
+
     public function test_another_customer_cannot_view_or_message_this_report(): void
     {
         $application = $this->lockedApplication();
@@ -217,20 +323,10 @@ class ReportChatTest extends TestCase
         $this->getJson("/api/staff/reports/{$application->id}/messages")->assertStatus(403);
     }
 
-    public function test_message_sending_survives_realtime_broadcast_failure(): void
+    public function test_message_sending_remains_durable_while_realtime_worker_is_offline(): void
     {
         $application = $this->lockedApplication();
-
-        // Bind a broadcaster mock that simulates a Reverb socket transport exception
-        $mockBroadcaster = $this->mock(\App\Services\ReportMessageBroadcastService::class);
-        $mockBroadcaster->shouldReceive('send')->once()->andReturnUsing(function ($message) {
-            \Illuminate\Support\Facades\Log::warning('[report-chat] realtime broadcast failed', [
-                'message_id' => $message->id,
-                'exception' => 'Connection to Reverb failed',
-            ]);
-        });
-
-        \Illuminate\Support\Facades\Log::spy();
+        config(['queue.default' => 'database']);
 
         $response = $this->postJson("/api/applications/{$application->id}/report/messages", [
             'body' => 'Message during Reverb outage',
@@ -244,12 +340,11 @@ class ReportChatTest extends TestCase
             'credit_application_id' => $application->id,
             'body' => 'Message during Reverb outage',
         ]);
-
-        \Illuminate\Support\Facades\Log::shouldHaveReceived('warning')
-            ->withArgs(function ($message, $context) use ($response) {
-                return str_contains($message, 'realtime broadcast failed')
-                    && $context['message_id'] === $response->json('data.message.id');
-            });
+        $this->assertDatabaseHas('async_outbox_events', [
+            'type' => 'report_message.broadcast',
+            'aggregate_id' => $response->json('data.message.id'),
+            'status' => AsyncOutboxEvent::STATUS_PENDING,
+        ]);
     }
 
     public function test_customer_can_send_file_attachment_without_body(): void
@@ -260,7 +355,7 @@ class ReportChatTest extends TestCase
 
         Sanctum::actingAs($this->customer, ['*']);
 
-        $file = UploadedFile::fake()->create('devis_commercial.pdf', 1024, 'application/pdf');
+        $file = $this->fakePdf('devis_commercial.pdf', 1024);
 
         $response = $this->post("/api/applications/{$application->id}/report/messages", [
             'file' => $file,
@@ -275,6 +370,36 @@ class ReportChatTest extends TestCase
 
         $downloadResponse = $this->get("/api/applications/{$application->id}/report/messages/{$messageId}/attachment");
         $downloadResponse->assertOk();
+    }
+
+    public function test_infected_report_attachment_is_rejected_before_storage(): void
+    {
+        $application = $this->lockedApplication();
+
+        $scanner = $this->mock(MalwareScanner::class);
+        $scanner->shouldReceive('scan')->once()->andReturn([
+            'status' => 'infected',
+            'signature' => 'Synthetic.Test.Signature',
+        ]);
+
+        Sanctum::actingAs($this->customer, ['*']);
+
+        $this->post("/api/applications/{$application->id}/report/messages", [
+            'file' => $this->fakePdf('infected.pdf', 512),
+        ], ['Accept' => 'application/json'])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'DOCUMENT_MALWARE_DETECTED');
+
+        $this->assertDatabaseMissing('report_messages', [
+            'credit_application_id' => $application->id,
+            'attachment_name' => 'infected.pdf',
+        ]);
+        $this->assertDatabaseHas('audit_logs', [
+            'user_id' => $this->customer->id,
+            'credit_application_id' => $application->id,
+            'action' => 'report_attachment.malware_rejected',
+        ]);
+        Storage::disk('documents')->assertMissing("applications/{$application->id}");
     }
 
     public function test_staff_can_send_file_attachment(): void

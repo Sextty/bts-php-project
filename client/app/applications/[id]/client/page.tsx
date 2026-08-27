@@ -6,7 +6,7 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { ApplicationStepper } from '@/components/application-stepper';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
-import { DocumentsUploadCard } from '@/components/documents-upload-card';
+import { PersonalDocumentsUploadCard } from '@/components/personal-documents-upload-card';
 import {
   getApplication,
   updateClient,
@@ -16,7 +16,7 @@ import {
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
 import { PageLoading } from '@/components/page-loading';
-import { User, ArrowRight, Lock } from 'lucide-react';
+import { ArrowRight, Lock } from 'lucide-react';
 
 type FormState = Omit<ClientDto, 'code_client'>;
 
@@ -72,9 +72,20 @@ export default function ClientStepPage() {
     event.preventDefault();
     setError(null);
     setFieldErrors(null);
+
+    // Validate 8-digit CIN
+    if (form.type_pid === 'CIN' && !/^[0-9]{8}$/.test(form.numero_pid.trim())) {
+      setError('Le numéro de la CIN doit comporter exactement 8 chiffres.');
+      setFieldErrors({ numero_pid: ['Le numéro de la CIN doit comporter exactement 8 chiffres.'] });
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const { application } = await updateClient(applicationId, form);
+      const { application } = await updateClient(applicationId, {
+        ...form,
+        numero_pid: form.numero_pid.trim(),
+      });
       setApplication(application);
       router.push(`/applications/${applicationId}/credit`);
     } catch (err) {
@@ -93,7 +104,7 @@ export default function ClientStepPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-3xl px-4 py-10 space-y-4">
           <BackLink href="/applications" label="Retour à mes demandes" />
@@ -106,7 +117,7 @@ export default function ClientStepPage() {
   const locked = application.is_locked;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />
@@ -141,23 +152,24 @@ export default function ClientStepPage() {
         {/* ── Stepper ── */}
         <ApplicationStepper status={application.status} current="client" />
 
-        {/* ── Form Card ── */}
-        <div className="figma-card p-6 sm:p-8 bg-white space-y-6">
-          <div className="border-b border-[#E0E4E9] pb-4">
-            <p className="overline">Étape 1 sur 5</p>
-            <h1 className="font-display text-2xl font-light text-[#0C1825]">
-              Informations Personnelles & Civilité
-            </h1>
-            <p className="text-xs text-[#3D5166] mt-1">
-              Renseignez vos coordonnées officielles telles qu&apos;inscrites sur votre pièce d&apos;identité.
-            </p>
-          </div>
+        {/* ── Form Container wrapping Form & Document Upload ── */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── 1. Form Card : Informations Personnelles & Civilité ── */}
+          <div className="figma-card p-6 sm:p-8 bg-white space-y-6 shadow-xs border border-[#E0E4E9]">
+            <div className="border-b border-[#E0E4E9] pb-4">
+              <p className="overline">Étape 1 sur 5</p>
+              <h1 className="font-display text-2xl font-light text-[#0C1825]">
+                Informations Personnelles & Civilité
+              </h1>
+              <p className="text-xs text-[#3D5166] mt-1">
+                Renseignez vos coordonnées d&apos;identité et informations personnelles requises pour votre dossier.
+              </p>
+            </div>
 
-          <ErrorAlert message={error} fields={fieldErrors} />
+            <ErrorAlert message={error} fields={fieldErrors} />
 
-          <form onSubmit={handleSubmit} className="space-y-6">
             <fieldset disabled={locked} className="space-y-5 disabled:opacity-60">
-              {/* Civilité */}
+              {/* Civilité, Nom, Prénom */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label htmlFor="civilite" className="text-xs font-semibold text-[#0C1825]">
@@ -171,13 +183,96 @@ export default function ClientStepPage() {
                     required
                   >
                     <option value="">Sélectionner</option>
-                    <option value="M">M.</option>
-                    <option value="Mme">Mme</option>
-                    <option value="Mlle">Mlle</option>
+                    <option value="M">Monsieur (M.)</option>
+                    <option value="Mme">Madame (Mme)</option>
+                    <option value="Mlle">Mademoiselle (Mlle)</option>
                   </select>
                 </div>
+                <FormInput
+                  label="Nom de famille"
+                  id="nom"
+                  value={form.nom}
+                  onChange={(v) => setForm({ ...form, nom: v })}
+                  placeholder="Ben Salah"
+                  required
+                />
+                <FormInput
+                  label="Prénom"
+                  id="prenom"
+                  value={form.prenom}
+                  onChange={(v) => setForm({ ...form, prenom: v })}
+                  placeholder="Karim"
+                  required
+                />
+              </div>
 
-                <div className="space-y-1.5 sm:col-span-2">
+              {/* Deuxième prénom & Nom de l'époux */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormInput
+                  label="Deuxième prénom"
+                  id="deuxieme_prenom"
+                  value={form.deuxieme_prenom || ''}
+                  onChange={(v) => setForm({ ...form, deuxieme_prenom: v })}
+                  placeholder="Ex: Mohamed"
+                  optional
+                />
+                <FormInput
+                  label="Nom de l'époux(se)"
+                  id="nom_epoux"
+                  value={form.nom_epoux || ''}
+                  onChange={(v) => setForm({ ...form, nom_epoux: v })}
+                  placeholder="Pour les personnes mariées"
+                  optional
+                />
+              </div>
+
+              {/* Naissance */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <FormInput
+                  label="Date de naissance"
+                  id="date_naissance"
+                  type="date"
+                  value={form.date_naissance}
+                  onChange={(v) => setForm({ ...form, date_naissance: v })}
+                  required
+                />
+                <FormInput
+                  label="Lieu de naissance"
+                  id="lieu_naissance"
+                  value={form.lieu_naissance}
+                  onChange={(v) => setForm({ ...form, lieu_naissance: v })}
+                  placeholder="Tunis, Sousse, Sfax..."
+                  required
+                />
+                <FormInput
+                  label="Pays de naissance"
+                  id="pays_naissance"
+                  value={form.pays_naissance}
+                  onChange={(v) => setForm({ ...form, pays_naissance: v })}
+                  placeholder="Tunisie"
+                  required
+                />
+              </div>
+
+              {/* Nationalité, Pays de résidence, État civil, Enfants */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <FormInput
+                  label="Nationalité"
+                  id="nationalite"
+                  value={form.nationalite}
+                  onChange={(v) => setForm({ ...form, nationalite: v })}
+                  placeholder="Tunisienne"
+                  required
+                />
+                <FormInput
+                  label="Pays de résidence"
+                  id="pays_residence"
+                  value={form.pays_residence}
+                  onChange={(v) => setForm({ ...form, pays_residence: v })}
+                  placeholder="Tunisie"
+                  required
+                />
+                <div className="space-y-1.5">
                   <label htmlFor="etat_civil" className="text-xs font-semibold text-[#0C1825]">
                     État civil <span className="text-[#C0272D]">*</span>
                   </label>
@@ -195,97 +290,8 @@ export default function ClientStepPage() {
                     <option value="veuf">Veuf / Veuve</option>
                   </select>
                 </div>
-              </div>
-
-              {/* Nom & Prénom */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormInput
-                  label="Nom"
-                  id="nom"
-                  value={form.nom}
-                  onChange={(v) => setForm({ ...form, nom: v })}
-                  placeholder="Ben Salah"
-                  required
-                />
-                <FormInput
-                  label="Prénom"
-                  id="prenom"
-                  value={form.prenom}
-                  onChange={(v) => setForm({ ...form, prenom: v })}
-                  placeholder="Mohamed"
-                  required
-                />
-              </div>
-
-              {/* Nom d'époux & 2ème prénom */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormInput
-                  label="Nom d'époux (si applicable)"
-                  id="nom_epoux"
-                  value={form.nom_epoux ?? ''}
-                  onChange={(v) => setForm({ ...form, nom_epoux: v })}
-                  optional
-                />
-                <FormInput
-                  label="Deuxième prénom"
-                  id="deuxieme_prenom"
-                  value={form.deuxieme_prenom ?? ''}
-                  onChange={(v) => setForm({ ...form, deuxieme_prenom: v })}
-                  optional
-                />
-              </div>
-
-              {/* Naissance */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormInput
-                  label="Date de naissance"
-                  id="date_naissance"
-                  type="date"
-                  value={form.date_naissance}
-                  onChange={(v) => setForm({ ...form, date_naissance: v })}
-                  required
-                />
-                <FormInput
-                  label="Lieu de naissance"
-                  id="lieu_naissance"
-                  value={form.lieu_naissance}
-                  onChange={(v) => setForm({ ...form, lieu_naissance: v })}
-                  placeholder="Tunis"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormInput
-                  label="Pays de naissance"
-                  id="pays_naissance"
-                  value={form.pays_naissance}
-                  onChange={(v) => setForm({ ...form, pays_naissance: v })}
-                  placeholder="Tunisie"
-                  required
-                />
-                <FormInput
-                  label="Nationalité"
-                  id="nationalite"
-                  value={form.nationalite}
-                  onChange={(v) => setForm({ ...form, nationalite: v })}
-                  placeholder="Tunisienne"
-                  required
-                />
-              </div>
-
-              {/* Résidence & Enfants */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormInput
-                  label="Pays de résidence"
-                  id="pays_residence"
-                  value={form.pays_residence}
-                  onChange={(v) => setForm({ ...form, pays_residence: v })}
-                  placeholder="Tunisie"
-                  required
-                />
-                <FormInput
-                  label="Nombre d'enfants à charge"
+                  label="Nombre d'enfants"
                   id="nombre_enfants"
                   type="number"
                   value={String(form.nombre_enfants)}
@@ -307,22 +313,33 @@ export default function ClientStepPage() {
                     <select
                       id="type_pid"
                       value={form.type_pid}
-                      onChange={(e) => setForm({ ...form, type_pid: e.target.value })}
+                      onChange={(e) => {
+                        const newType = e.target.value;
+                        setForm({
+                          ...form,
+                          type_pid: newType,
+                          numero_pid: newType === 'CIN' ? form.numero_pid.replace(/\D/g, '').slice(0, 8) : form.numero_pid,
+                        });
+                      }}
                       className="w-full text-xs font-medium bg-white border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
                       required
                     >
                       <option value="">Sélectionner</option>
-                      <option value="CIN">Carte d&apos;Identité Nationale (CIN)</option>
+                      <option value="CIN">Carte d&apos;Identité Nationale (CIN - 8 chiffres)</option>
                       <option value="Passeport">Passeport</option>
                       <option value="Carte de séjour">Carte de séjour</option>
                     </select>
                   </div>
                   <FormInput
-                    label="Numéro de pièce"
+                    label={form.type_pid === 'CIN' ? "Numéro de la CIN (8 chiffres obligatoires)" : "Numéro de pièce"}
                     id="numero_pid"
                     value={form.numero_pid}
-                    onChange={(v) => setForm({ ...form, numero_pid: v })}
-                    placeholder="08123456"
+                    onChange={(v) => {
+                      const cleanVal = form.type_pid === 'CIN' ? v.replace(/\D/g, '').slice(0, 8) : v;
+                      setForm({ ...form, numero_pid: cleanVal });
+                    }}
+                    placeholder={form.type_pid === 'CIN' ? "Ex: 08123456 (8 chiffres)" : "Numéro de pièce"}
+                    maxLength={form.type_pid === 'CIN' ? 8 : 50}
                     required
                   />
                 </div>
@@ -366,29 +383,32 @@ export default function ClientStepPage() {
                 />
               </div>
             </fieldset>
+          </div>
 
-            {!locked && (
-              <div className="pt-4 border-t border-[#E0E4E9] flex justify-end">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn-red text-xs inline-flex items-center gap-2 shadow-xs"
-                  style={{ padding: '10px 24px' }}
-                >
-                  <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Demande de crédit'}</span>
-                  <ArrowRight className="size-4" />
-                </button>
+          {/* ── 2. Personal Documents Upload Section (CIN + Diplôme) ── */}
+          <PersonalDocumentsUploadCard
+            applicationId={applicationId}
+            documents={application.documents}
+            locked={locked}
+          />
+
+          {/* ── 3. Bottom Action Bar (PLACED AFTER THE JOINDRE ZONE) ── */}
+          {!locked && (
+            <div className="figma-card p-4 sm:p-5 bg-white border border-[#E0E4E9] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs rounded-xl">
+              <div className="text-xs text-[#3D5166]">
+                Vérifiez que toutes vos informations et pièces d&apos;identité (CIN &amp; Diplôme) sont complètes avant de continuer.
               </div>
-            )}
-          </form>
-        </div>
-
-        {/* Documents Upload Section */}
-        <DocumentsUploadCard
-          applicationId={applicationId}
-          documents={application.documents}
-          locked={locked}
-        />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-red shrink-0 justify-center gap-2 px-7 text-xs shadow-xs"
+              >
+                <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Demande de Crédit'}</span>
+                <ArrowRight className="size-4" />
+              </button>
+            </div>
+          )}
+        </form>
       </main>
     </div>
   );
@@ -403,6 +423,7 @@ function FormInput({
   placeholder,
   required = false,
   optional = false,
+  maxLength,
 }: {
   label: string;
   id: string;
@@ -412,6 +433,7 @@ function FormInput({
   placeholder?: string;
   required?: boolean;
   optional?: boolean;
+  maxLength?: number;
 }) {
   return (
     <div className="space-y-1.5">
@@ -426,6 +448,7 @@ function FormInput({
         type={type}
         required={required}
         placeholder={placeholder}
+        maxLength={maxLength}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] placeholder:text-gray-400 focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D] transition-colors"

@@ -2,7 +2,6 @@
 
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Logo } from '@/components/logo';
 import { ErrorAlert } from '@/components/error-alert';
 import { staffLogin } from '@/lib/api/staff';
@@ -34,7 +33,7 @@ export default function StaffLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-[#1E2D3D]">
+    <main id="main" className="staff-page flex min-h-screen flex-col justify-center py-10 text-[#1E2D3D] sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center space-y-3">
         <div className="inline-flex items-center justify-center gap-3">
           <Logo size={40} />
@@ -54,7 +53,7 @@ export default function StaffLoginPage() {
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="figma-card p-6 sm:p-8 bg-white space-y-6 shadow-sm border-t-4 border-t-[#C0272D]">
+        <div className="figma-card space-y-6 border-t-4 border-t-[#C0272D] bg-white/95 p-6 shadow-xl shadow-slate-900/5 backdrop-blur sm:p-8">
           <ErrorAlert message={error} />
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -97,8 +96,7 @@ export default function StaffLoginPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="btn-red text-xs w-full shadow-xs justify-center"
-                style={{ padding: '10px 24px' }}
+                className="btn-red w-full px-6 py-2.5 text-xs shadow-xs"
               >
                 <span>{submitting ? 'Authentification en cours…' : 'Accéder au portail staff'}</span>
                 <ArrowRight className="size-4" />
@@ -112,6 +110,6 @@ export default function StaffLoginPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

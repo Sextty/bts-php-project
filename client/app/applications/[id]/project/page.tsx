@@ -6,7 +6,6 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { ApplicationStepper } from '@/components/application-stepper';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
-import { DocumentsUploadCard } from '@/components/documents-upload-card';
 import {
   getApplication,
   updateProject,
@@ -16,14 +15,7 @@ import {
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
 import { PageLoading } from '@/components/page-loading';
-import { Layers, ArrowRight, Lock, MapPin } from 'lucide-react';
-import dynamic from 'next/dynamic';
-import 'leaflet/dist/leaflet.css';
-
-const MapLocationPicker = dynamic(
-  () => import('@/components/map-location-picker').then((m) => m.MapLocationPicker),
-  { ssr: false }
-);
+import { ArrowRight, Lock, MapPin } from 'lucide-react';
 
 type ProjectFormState = Omit<ProjectDto, 'code_projet' | 'identifiant_personne'>;
 
@@ -57,7 +49,6 @@ export default function ProjectStepPage() {
   const [form, setForm] = useState<ProjectFormState>(EMPTY_FORM);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null);
 
@@ -74,7 +65,9 @@ export default function ProjectStepPage() {
         const defaultFinancement = application.credit_request?.montant_global_sollicite || '';
 
         if (application.project) {
-          const { code_projet: _, identifiant_personne: __, ...rest } = application.project;
+          const { code_projet, identifiant_personne, ...rest } = application.project;
+          void code_projet;
+          void identifiant_personne;
           setForm({
             ...EMPTY_FORM,
             ...rest,
@@ -137,7 +130,7 @@ export default function ProjectStepPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-3xl px-4 py-10 space-y-4">
           <BackLink href="/applications" label="Retour à mes demandes" />
@@ -150,7 +143,7 @@ export default function ProjectStepPage() {
   const locked = application.is_locked;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />
@@ -180,30 +173,31 @@ export default function ProjectStepPage() {
         {/* ── Stepper ── */}
         <ApplicationStepper status={application.status} current="project" />
 
-        {/* ── Form Card ── */}
-        <div className="figma-card p-6 sm:p-8 bg-white space-y-6">
-          <div className="border-b border-[#E0E4E9] pb-4">
-            <p className="overline">Étape 3 sur 5</p>
-            <h1 className="font-display text-2xl font-light text-[#0C1825]">
-              Descriptif du Projet & Localisation
-            </h1>
-            <p className="text-xs text-[#3D5166] mt-1">
-              Détaillez la nature de votre activité, l&apos;implantation géographique et le modèle économique prévisionnel.
-            </p>
-          </div>
+        {/* ── Project form ── */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── 1. Form Card : Descriptif du Projet & Localisation ── */}
+          <div className="figma-card p-6 sm:p-8 bg-white space-y-6 shadow-xs border border-[#E0E4E9]">
+            <div className="border-b border-[#E0E4E9] pb-4">
+              <p className="overline">Étape 3 sur 5</p>
+              <h1 className="font-display text-2xl font-light text-[#0C1825]">
+                Descriptif du Projet & Localisation
+              </h1>
+              <p className="text-xs text-[#3D5166] mt-1">
+                Détaillez la nature de votre activité, l&apos;implantation géographique et le modèle économique prévisionnel.
+              </p>
+            </div>
 
-          <ErrorAlert message={error} fields={fieldErrors} />
+            <ErrorAlert message={error} fields={fieldErrors} />
 
-          <form onSubmit={handleSubmit} className="space-y-6">
             <fieldset disabled={locked} className="space-y-5 disabled:opacity-60">
               {/* Promoteur / Raison Sociale */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormInput
-                  label="Nom ou Raison Sociale de l'activité"
+                  label="Nom ou Raison Sociale du promoteur"
                   id="nom_ou_rs"
                   value={form.nom_ou_rs}
                   onChange={(v) => setForm({ ...form, nom_ou_rs: v })}
-                  placeholder="Ex: Société Tunisienne de Services"
+                  placeholder="Ex: Société Exemple"
                   required
                 />
                 <FormInput
@@ -216,8 +210,8 @@ export default function ProjectStepPage() {
                 />
               </div>
 
-              {/* Type de Projet & Activité */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Type de projet, Secteur & Objet */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1.5">
                   <label htmlFor="type_projet" className="text-xs font-semibold text-[#0C1825]">
                     Type de projet <span className="text-[#C0272D]">*</span>
@@ -231,88 +225,81 @@ export default function ProjectStepPage() {
                   >
                     <option value="">Sélectionner</option>
                     <option value="Création">Création d&apos;entreprise</option>
-                    <option value="Extension">Extension / Développement</option>
-                    <option value="Modernisation">Modernisation d&apos;équipement</option>
+                    <option value="Extension">Extension d&apos;activité</option>
+                    <option value="Modernisation">Modernisation / Rénovation</option>
                   </select>
                 </div>
-
                 <FormInput
                   label="Secteur d'activité"
                   id="activite"
                   value={form.activite}
                   onChange={(v) => setForm({ ...form, activite: v })}
-                  placeholder="Ex: Artisanat, Services, Commerce, Agriculture..."
+                  placeholder="Ex: Agriculture, Services, Industrie..."
+                  required
+                />
+                <FormInput
+                  label="Objet du projet"
+                  id="objet"
+                  value={form.objet}
+                  onChange={(v) => setForm({ ...form, objet: v })}
+                  placeholder="Ex: Achat d'équipements de menuiserie"
                   required
                 />
               </div>
 
-              {/* Objet du projet */}
-              <FormInput
-                label="Objet du projet"
-                id="objet"
-                value={form.objet}
-                onChange={(v) => setForm({ ...form, objet: v })}
-                placeholder="Ex: Ouverture d'un atelier de confection textile"
-                required
-              />
-
-              {/* Description détaillée */}
+              {/* Description */}
               <div className="space-y-1.5">
-                <label htmlFor="description" className="text-xs font-semibold text-[#0C1825]">
-                  Description détaillée du projet
+                <label htmlFor="description" className="text-xs font-semibold text-[#0C1825] flex items-center justify-between">
+                  <span>Description synthétique du projet <span className="text-[#C0272D]">*</span></span>
+                  <span className="text-[10px] text-[#3D5166]">Présentez vos objectifs et vos clients cibles</span>
                 </label>
                 <textarea
                   id="description"
                   rows={3}
+                  required
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Expliquez brièvement les points forts de votre projet, vos clients cibles, etc."
+                  placeholder="Expliquez brièvement les activités, la clientèle visée, les équipements prévus..."
                   className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg p-3 text-[#0C1825] placeholder:text-gray-400 focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D] transition-colors"
                 />
               </div>
 
-              {/* Localisation & Adresse */}
+              {/* Localisation & Coordonnées GPS */}
               <div className="p-4 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold uppercase tracking-wider text-[#0C1825]">
-                    Implantation & Localisation
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#0C1825] flex items-center gap-1.5">
+                    <MapPin className="size-3.5 text-[#C0272D]" />
+                    <span>Implantation Géographique &amp; Coordonnées GPS</span>
                   </div>
-                  {!locked && (
-                    <button
-                      type="button"
-                      onClick={() => setPickerOpen(true)}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#C0272D] hover:underline"
-                    >
-                      <MapPin className="size-3.5" />
-                      <span>{form.latitude ? 'Modifier la position GPS' : 'Localiser sur la carte'}</span>
-                    </button>
-                  )}
+                  <span className="text-[10px] text-[#3D5166]">Localisation exacte de l&apos;activité</span>
                 </div>
 
-                {form.latitude && form.longitude && (
-                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
-                    <MapPin className="size-4 text-emerald-600 shrink-0" />
-                    <span>
-                      Coordonnées GPS enregistrées : <strong>{Number(form.latitude).toFixed(4)}, {Number(form.longitude).toFixed(4)}</strong> (utilisées pour vous affecter l&apos;agence la plus proche).
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormInput
-                    label="Gouvernorat / Ville"
+                    label="Adresse du local / siège"
+                    id="adresse"
+                    value={form.adresse}
+                    onChange={(v) => setForm({ ...form, adresse: v })}
+                    placeholder="Ex: 15 Rue de la République"
+                    required
+                  />
+                  <FormInput
+                    label="Ville / Commune"
                     id="ville"
                     value={form.ville}
                     onChange={(v) => setForm({ ...form, ville: v })}
-                    placeholder="Tunis"
+                    placeholder="Ex: Ariana"
                     required
                   />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormInput
                     label="Délégation"
                     id="delegation"
                     value={form.delegation}
                     onChange={(v) => setForm({ ...form, delegation: v })}
-                    placeholder="La Marsa"
+                    placeholder="Ex: Ariana Ville"
                     required
                   />
                   <FormInput
@@ -320,83 +307,39 @@ export default function ProjectStepPage() {
                     id="code_postal"
                     value={form.code_postal}
                     onChange={(v) => setForm({ ...form, code_postal: v })}
-                    placeholder="2070"
+                    placeholder="Ex: 2080"
                     required
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <FormInput
-                    label="Précision de localisation / Quartier"
-                    id="localisation"
-                    value={form.localisation}
-                    onChange={(v) => setForm({ ...form, localisation: v })}
-                    placeholder="Ex: Centre-ville, Zone industrielle..."
-                    required
-                  />
-                  <FormInput
-                    label="Adresse exacte du local"
-                    id="adresse"
-                    value={form.adresse}
-                    onChange={(v) => setForm({ ...form, adresse: v })}
-                    placeholder="Avenue Habib Bourguiba, N°..."
-                    required
-                  />
-                </div>
               </div>
 
-              <MapLocationPicker
-                open={pickerOpen}
-                onOpenChange={setPickerOpen}
-                onSelect={(address, lat, lon) => {
-                  setForm((prev) => ({
-                    ...prev,
-                    adresse: address || prev.adresse,
-                    latitude: lat !== undefined ? lat : prev.latitude,
-                    longitude: lon !== undefined ? lon : prev.longitude,
-                  }));
-                }}
-              />
-
-              {/* Budget & Financement Prévisionnel */}
-              <div className="p-4 bg-[#FDF2F2] border border-[#FECACA] rounded-xl space-y-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-[#C0272D]">
-                  Plan de Financement Prévisionnel (TND)
+              {/* Paramètres Financiers du Projet */}
+              <div className="p-4 bg-[#FAFBFD] rounded-xl border border-[#E0E4E9] space-y-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0C1825]">
+                  Plan de Financement &amp; Rentabilité Prévisionnelle (TND)
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <FormInput
-                    label="Coût global du projet (TND)"
+                    label="Coût total du projet"
                     id="cout"
-                    type="number"
                     value={form.cout}
-                    onChange={(v) => {
-                      const newCout = v;
-                      const invest = form.investissement_personnel;
-                      const calculatedFinancement = (newCout && invest) ? String(Math.max(0, Number(newCout) - Number(invest))) : form.financement;
-                      setForm({ ...form, cout: newCout, financement: calculatedFinancement });
-                    }}
+                    onChange={(v) => setForm({ ...form, cout: v })}
                     placeholder="Ex: 60000"
                     required
                   />
                   <FormInput
-                    label="Apport personnel (TND)"
+                    label="Investissement personnel"
                     id="investissement_personnel"
-                    type="number"
                     value={form.investissement_personnel}
-                    onChange={(v) => {
-                      const newInvest = v;
-                      const coutVal = form.cout;
-                      const calculatedFinancement = (coutVal && newInvest) ? String(Math.max(0, Number(coutVal) - Number(newInvest))) : form.financement;
-                      setForm({ ...form, investissement_personnel: newInvest, financement: calculatedFinancement });
-                    }}
+                    onChange={(v) => setForm({ ...form, investissement_personnel: v })}
                     placeholder="Ex: 10000"
                     required
                   />
                   <FormInput
-                    label="Financement sollicité (TND)"
+                    label="Crédit sollicité (BTS)"
                     id="financement"
-                    type="number"
                     value={form.financement}
                     onChange={(v) => setForm({ ...form, financement: v })}
                     placeholder="Ex: 50000"
@@ -406,47 +349,43 @@ export default function ProjectStepPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <FormInput
-                    label="Revenus mensuels prévisionnels (TND)"
+                    label="Revenus mensuels prévisionnels"
                     id="revenus"
-                    type="number"
                     value={form.revenus}
                     onChange={(v) => setForm({ ...form, revenus: v })}
                     placeholder="Ex: 4500"
+                    required
                   />
                   <FormInput
-                    label="Dépenses d'exploitation estimées (TND)"
+                    label="Dépenses mensuelles prévisionnelles"
                     id="depenses"
-                    type="number"
                     value={form.depenses}
                     onChange={(v) => setForm({ ...form, depenses: v })}
                     placeholder="Ex: 2200"
+                    required
                   />
                 </div>
               </div>
             </fieldset>
+          </div>
 
-            {!locked && (
-              <div className="pt-4 border-t border-[#E0E4E9] flex justify-end">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn-red text-xs inline-flex items-center gap-2 shadow-xs"
-                  style={{ padding: '10px 24px' }}
-                >
-                  <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Documents & Validation'}</span>
-                  <ArrowRight className="size-4" />
-                </button>
+          {/* ── Bottom action bar ── */}
+          {!locked && (
+            <div className="figma-card p-4 sm:p-5 bg-white border border-[#E0E4E9] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs rounded-xl">
+              <div className="text-xs text-[#3D5166]">
+                Vérifiez le descriptif de votre projet avant de passer au récapitulatif final.
               </div>
-            )}
-          </form>
-        </div>
-
-        {/* Documents Upload Section */}
-        <DocumentsUploadCard
-          applicationId={applicationId}
-          documents={application.documents}
-          locked={locked}
-        />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-red shrink-0 justify-center gap-2 px-7 text-xs shadow-xs"
+              >
+                <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Validation'}</span>
+                <ArrowRight className="size-4" />
+              </button>
+            </div>
+          )}
+        </form>
       </main>
     </div>
   );

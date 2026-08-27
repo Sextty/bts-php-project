@@ -7,6 +7,7 @@ use App\Exceptions\Gemini\GeminiApiException;
 use App\Exceptions\Gemini\GeminiConfigurationException;
 use App\Exceptions\Gemini\GeminiMalformedResponseException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -23,8 +24,41 @@ class GeminiHttpClient implements GeminiClientInterface
 {
     private const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent';
 
-    public function generateContent(string $mimeType, string $base64Contents, string $prompt): array
-    {
+    private const RESPONSE_JSON_SCHEMA = [
+        'type' => 'object',
+        'properties' => [
+            'is_valid' => ['type' => 'boolean'],
+            'confidence' => ['type' => 'string', 'enum' => ['high', 'medium', 'low']],
+            'comment' => ['type' => 'string', 'description' => 'Une phrase courte en français.'],
+            'extracted_fields' => [
+                'type' => 'object',
+                'additionalProperties' => ['type' => ['string', 'null']],
+            ],
+            'mismatches' => [
+                'type' => 'array',
+                'items' => [
+                    'type' => 'object',
+                    'properties' => [
+                        'field' => ['type' => 'string'],
+                        'expected' => ['type' => ['string', 'null']],
+                        'extracted' => ['type' => ['string', 'null']],
+                        'severity' => ['type' => 'string', 'enum' => ['critical', 'warning']],
+                    ],
+                    'required' => ['field', 'expected', 'extracted', 'severity'],
+                    'additionalProperties' => false,
+                ],
+            ],
+        ],
+        'required' => ['is_valid', 'confidence', 'comment', 'extracted_fields', 'mismatches'],
+        'additionalProperties' => false,
+    ];
+
+    public function generateContent(
+        string $mimeType,
+        string $base64Contents,
+        string $prompt,
+        ?int $timeBudgetSeconds = null,
+    ): array {
         $apiKey = config('services.gemini.api_key');
 
         if (! is_string($apiKey) || $apiKey === '') {
@@ -32,21 +66,32 @@ class GeminiHttpClient implements GeminiClientInterface
         }
 
         $url = sprintf(self::API_URL, config('services.gemini.model'));
-        $timeout = (int) config('services.gemini.timeout_seconds', 60);
-        $connectTimeout = (int) config('services.gemini.connect_timeout_seconds', 10);
-        $maxRetries = (int) config('services.gemini.max_retries', 2);
-        $retryDelayMs = (int) config('services.gemini.retry_delay_ms', 1000);
+        $configuredTimeout = max(1, (int) config('services.gemini.timeout_seconds', 25));
+        $timeBudgetSeconds = max(1, $timeBudgetSeconds ?? $configuredTimeout);
+        $deadline = microtime(true) + $timeBudgetSeconds;
+        $connectTimeout = (int) config('services.gemini.connect_timeout_seconds', 5);
+        $maxRetries = (int) config('services.gemini.max_retries', 1);
+        $retryDelayMs = (int) config('services.gemini.retry_delay_ms', 250);
 
         $attempt = 0;
 
         while (true) {
             $attempt++;
+            $remainingSeconds = $deadline - microtime(true);
+            if ($remainingSeconds <= 0.1) {
+                throw new GeminiApiException(
+                    'Gemini request stopped because the document-validation time budget was exhausted.'
+                );
+            }
+
+            $attemptTimeout = max(1, min($configuredTimeout, (int) ceil($remainingSeconds)));
+            $attemptConnectTimeout = max(1, min($connectTimeout, $attemptTimeout));
 
             try {
                 $response = Http::withHeaders(['X-goog-api-key' => $apiKey])
                     ->acceptJson()
-                    ->timeout($timeout)
-                    ->connectTimeout($connectTimeout)
+                    ->timeout($attemptTimeout)
+                    ->connectTimeout($attemptConnectTimeout)
                     ->post($url, [
                         'contents' => [
                             [
@@ -56,7 +101,16 @@ class GeminiHttpClient implements GeminiClientInterface
                                 ],
                             ],
                         ],
-                        'generationConfig' => ['responseMimeType' => 'application/json'],
+                        'generationConfig' => [
+                            'responseMimeType' => 'application/json',
+                            'responseJsonSchema' => self::RESPONSE_JSON_SCHEMA,
+                            'candidateCount' => 1,
+                            'maxOutputTokens' => (int) config('services.gemini.max_output_tokens', 512),
+                            'temperature' => (float) config('services.gemini.temperature', 0.1),
+                            'thinkingConfig' => [
+                                'thinkingBudget' => (int) config('services.gemini.thinking_budget', 0),
+                            ],
+                        ],
                     ]);
 
                 if ($response->successful()) {
@@ -65,8 +119,13 @@ class GeminiHttpClient implements GeminiClientInterface
 
                 if ($this->isTransientStatus($response->status()) && $attempt <= $maxRetries) {
                     $delay = $this->retryDelayMs($response, $attempt, $retryDelayMs);
+                    if (! $this->sleepWithinBudget($delay, $deadline)) {
+                        throw new GeminiApiException(
+                            "Gemini request failed: HTTP {$response->status()} (retry budget exhausted).",
+                            status: $response->status(),
+                        );
+                    }
                     $this->logRetry($response->status(), $attempt, $delay);
-                    usleep($delay * 1000);
 
                     continue;
                 }
@@ -78,8 +137,13 @@ class GeminiHttpClient implements GeminiClientInterface
             } catch (ConnectionException $e) {
                 if ($attempt <= $maxRetries) {
                     $delay = $retryDelayMs * (2 ** ($attempt - 1));
+                    if (! $this->sleepWithinBudget($delay, $deadline)) {
+                        throw new GeminiApiException(
+                            'Gemini request failed: connection retry budget exhausted.',
+                            previous: $e,
+                        );
+                    }
                     $this->logRetry(0, $attempt, $delay);
-                    usleep($delay * 1000);
 
                     continue;
                 }
@@ -102,7 +166,7 @@ class GeminiHttpClient implements GeminiClientInterface
      * Honors a Retry-After header when the API provides one, otherwise exponential backoff:
      * base * 2^(attempt-1), capped at 10s so a permanently failing call can't stall a request.
      */
-    private function retryDelayMs(\Illuminate\Http\Client\Response $response, int $attempt, int $baseMs): int
+    private function retryDelayMs(Response $response, int $attempt, int $baseMs): int
     {
         $retryAfter = (int) $response->header('Retry-After');
 
@@ -120,6 +184,19 @@ class GeminiHttpClient implements GeminiClientInterface
             'attempt' => $attempt,
             'retry_delay_ms' => $delayMs,
         ]);
+    }
+
+    private function sleepWithinBudget(int $delayMs, float $deadline): bool
+    {
+        $remainingMs = (int) floor(($deadline - microtime(true)) * 1000);
+
+        if ($delayMs <= 0 || $delayMs >= $remainingMs - 100) {
+            return false;
+        }
+
+        usleep($delayMs * 1000);
+
+        return true;
     }
 
     /**

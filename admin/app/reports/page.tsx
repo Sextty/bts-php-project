@@ -63,7 +63,8 @@ export default function ReportsListPage() {
   }
 
   useEffect(() => {
-    fetchReports();
+    queueMicrotask(() => void fetchReports());
+  // fetchReports intentionally reads only stable router state on initial mount.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -72,9 +73,9 @@ export default function ReportsListPage() {
   const safeReports = reports || [];
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-5xl mx-auto space-y-6">
+    <div className="admin-page admin-page-compact">
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="admin-page-hero flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0C1825] tracking-tight flex items-center gap-2.5">
             <MessageSquareText className="size-6 text-[#C0272D]" />

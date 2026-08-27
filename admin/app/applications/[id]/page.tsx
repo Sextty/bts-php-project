@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -27,7 +27,7 @@ export default function AdminApplicationDetailPage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchApplication = useCallback(async (showLoading = false) => {
     if (!getStaffToken()) {
       router.replace('/login');
       return;
@@ -36,11 +36,32 @@ export default function AdminApplicationDetailPage() {
       router.replace('/applications');
       return;
     }
-    getStaffApplication(applicationId)
-      .then(({ application }) => setApplication(application))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Erreur de chargement.'))
-      .finally(() => setLoading(false));
+    if (showLoading) setLoading(true);
+    try {
+      const result = await getStaffApplication(applicationId);
+      setApplication(result.application);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Erreur de chargement.');
+    } finally {
+      setLoading(false);
+    }
   }, [applicationId, router]);
+
+  useEffect(() => {
+    queueMicrotask(() => void fetchApplication(true));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchApplication();
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [fetchApplication]);
 
   async function handleApprove() {
     setError(null);
@@ -87,7 +108,7 @@ export default function AdminApplicationDetailPage() {
 
   if (!application) {
     return (
-      <div className="px-4 sm:px-8 py-8 max-w-6xl mx-auto">
+      <div className="admin-page max-w-6xl">
         <Link href="/applications" className="mb-6 inline-flex items-center gap-1.5 text-sm text-[#3D5166] hover:text-[#C0272D] transition-colors">
           <ArrowLeft className="size-4" />
           Retour aux dossiers
@@ -98,7 +119,7 @@ export default function AdminApplicationDetailPage() {
   }
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-6xl mx-auto">
+    <div className="admin-page max-w-6xl">
       <Link href="/applications" className="mb-6 inline-flex items-center gap-1.5 text-sm font-medium text-[#3D5166] hover:text-[#C0272D] transition-colors">
         <ArrowLeft className="size-4" />
         Retour aux dossiers

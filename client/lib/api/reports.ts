@@ -15,13 +15,15 @@ export interface ReportMessageDto {
 
 export interface ReportThreadDto {
   messages: ReportMessageDto[];
+  meta?: { has_more: boolean; next_before_id: number | null; limit: number };
   is_closed?: boolean;
   closed_at?: string | null;
   closed_reason?: string | null;
 }
 
-export function getReportMessages(applicationId: number) {
-  return apiFetch<ReportThreadDto>(`/applications/${applicationId}/report/messages`, { auth: true });
+export function getReportMessages(applicationId: number, beforeId?: number) {
+  const query = beforeId ? `?before_id=${beforeId}` : '';
+  return apiFetch<ReportThreadDto>(`/applications/${applicationId}/report/messages${query}`, { auth: true });
 }
 
 export function sendReportMessage(applicationId: number, body: string) {

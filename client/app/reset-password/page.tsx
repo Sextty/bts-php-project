@@ -34,7 +34,7 @@ function ResetPasswordContent() {
     setError(null);
 
     if (password !== passwordConfirmation) {
-      setError('The passwords do not match.');
+      setError('Les mots de passe ne correspondent pas.');
       return;
     }
 
@@ -43,7 +43,7 @@ function ResetPasswordContent() {
       await resetPassword({ token, email, password, password_confirmation: passwordConfirmation });
       router.push('/login');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'This reset link is invalid or has expired.');
+      setError(err instanceof ApiError ? err.message : 'Ce lien de réinitialisation est invalide ou expiré.');
     } finally {
       setSubmitting(false);
     }
@@ -52,11 +52,11 @@ function ResetPasswordContent() {
   if (!token || !email) return null;
 
   return (
-    <AuthCard title="Choose a new password">
+    <AuthCard title="Nouveau mot de passe" description="Choisissez un mot de passe robuste et différent de vos anciens mots de passe.">
       <ErrorAlert message={error} />
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="password">New password</Label>
+          <Label htmlFor="password" className="font-semibold text-[#1e2d3d]">Nouveau mot de passe</Label>
           <Input
             id="password"
             type="password"
@@ -69,11 +69,11 @@ function ResetPasswordContent() {
             onChange={(e) => setPassword(e.target.value)}
           />
           <p id="password-hint" className="text-xs text-muted-foreground">
-            Use at least 10 characters.
+            Utilisez au moins 10 caractères.
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password_confirmation">Confirm new password</Label>
+          <Label htmlFor="password_confirmation" className="font-semibold text-[#1e2d3d]">Confirmer le mot de passe</Label>
           <Input
             id="password_confirmation"
             type="password"
@@ -83,13 +83,13 @@ function ResetPasswordContent() {
             onChange={(e) => setPasswordConfirmation(e.target.value)}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Resetting…' : 'Reset password'}
+        <Button type="submit" className="h-11 w-full bg-[#c0272d] font-semibold hover:bg-[#9e1f24]" disabled={submitting}>
+          {submitting ? 'Mise à jour…' : 'Modifier le mot de passe'}
         </Button>
       </form>
       <p className="mt-4 text-center text-sm text-muted-foreground">
         <Link href="/login" className="font-medium text-primary underline">
-          Back to log in
+          Retour à la connexion
         </Link>
       </p>
     </AuthCard>

@@ -8,7 +8,6 @@ import {
   Inbox,
   RefreshCw,
   TrendingUp,
-  TrendingDown,
   Users,
   Clock,
   CheckCircle2,
@@ -22,12 +21,12 @@ import {
 } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
 import { TrendChart, BarList } from '@/components/charts/trend-chart';
-import { InlineLoading, PageLoading } from '@/components/page-loading';
+import { PageLoading } from '@/components/page-loading';
 import { listStaffApplications, type StaffApplicationDto } from '@/lib/api/staff';
 import { getDashboard, getTraffic, type DashboardDto, type TrafficDto } from '@/lib/api/staff-insights';
 import { ApiError } from '@/lib/api/client';
 import { getStaffToken } from '@/lib/auth/staff-token';
-import { statusLabel, statusColor } from '@/lib/status-labels';
+import { statusLabel } from '@/lib/status-labels';
 
 const PERIOD_OPTIONS = [
   { value: 7, label: '7j' },
@@ -57,6 +56,7 @@ export default function AdminDashboardPage() {
       return;
     }
     if (isRefresh) setRefreshing(true);
+    setError(null);
     try {
       const [dashRes, trafficRes, queueRes] = await Promise.allSettled([
         getDashboard(days),
@@ -73,7 +73,9 @@ export default function AdminDashboardPage() {
       }
 
       if (trafficRes.status === 'fulfilled') setTraffic(trafficRes.value);
+      else setError((current) => current ?? 'Les métriques de trafic sont temporairement indisponibles.');
       if (queueRes.status === 'fulfilled') setQueue(queueRes.value.applications);
+      else setError((current) => current ?? 'La file des dossiers est temporairement indisponible.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -81,18 +83,29 @@ export default function AdminDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchData(period);
+    queueMicrotask(() => void fetchData(period));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchData(period, true);
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
   }, [fetchData, period]);
 
   if (loading) return <PageLoading />;
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-8">
+    <div className="admin-page space-y-8">
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="admin-page-hero flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[#0C1825] tracking-tight">Tableau de bord</h1>
-          <p className="text-sm text-[#3D5166] mt-0.5">Vue d'ensemble du portefeuille de dossiers de crédit.</p>
+          <p className="text-sm text-[#3D5166] mt-0.5">Vue d’ensemble du portefeuille de dossiers de crédit.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -276,7 +289,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white rounded-2xl border border-[#E0E4E9] shadow-xs p-6">
               <h3 className="text-sm font-bold text-[#0C1825] mb-4 flex items-center gap-2">
                 <Users className="size-4 text-[#C0272D]" />
-                Activité de l'Équipe
+                Activité de l’Équipe
               </h3>
               {dashboard.team.length === 0 ? (
                 <p className="py-6 text-center text-sm text-[#3D5166]">Aucune décision enregistrée.</p>

@@ -8,9 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * A delivery medium for an already-persisted notification. Each channel is small and focused:
  * build a recipient representation for a notifiable, then deliver one notification through the
- * medium. Implementations must never throw on delivery failure — a dead SMTP/email/SMS gateway
- * must not break the in-app notification that was already persisted. Failures are logged inside
- * each channel and swallowed; the in-app row remains the source of truth.
+ * medium. Implementations throw retryable infrastructure failures and use a permanent-delivery
+ * exception for recipient/configuration failures. The queued job records/retries them; the
+ * already-persisted in-app source row is never rolled back.
  */
 interface NotificationChannelInterface
 {

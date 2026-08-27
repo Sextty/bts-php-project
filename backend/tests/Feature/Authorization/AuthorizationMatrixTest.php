@@ -66,7 +66,7 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
 
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");
@@ -173,7 +173,7 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
         $this->putJson("/api/applications/{$otherApplication->id}/client", $this->validClientPayload())->assertForbidden();
         $this->postJson("/api/applications/{$otherApplication->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ])->assertForbidden();
         $this->postJson("/api/applications/{$otherApplication->id}/report/messages", ['body' => 'hello'])
             ->assertForbidden();
@@ -196,13 +196,22 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
         $this->postJson('/api/applications')->assertForbidden();
     }
 
+    public function test_suspended_customer_token_cannot_reach_customer_routes(): void
+    {
+        $customer = User::factory()->create(['status' => 'suspended', 'banned_at' => now()]);
+        $this->as($customer);
+
+        $this->getJson('/api/applications')->assertForbidden();
+        $this->postJson('/api/applications')->assertForbidden();
+    }
+
     // ---- staff role -------------------------------------------------------------------
 
     public function test_staff_permissions_cover_the_review_flow(): void
     {
         Branch::factory()->default()->create();
         $application = $this->submittedApplication();
-        $this->as($this->staff());
+        $this->as($this->staff('staff', $application->branch));
 
         $this->getJson('/api/staff/applications')->assertOk()->assertJsonPath('data.meta.total', 1);
         $this->getJson("/api/staff/applications/{$application->id}")->assertOk();
@@ -290,9 +299,9 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
         $this->getJson('/api/staff/applications')->assertOk()->assertJsonPath('data.meta.total', 1);
         $this->getJson("/api/staff/applications/{$appUnrouted->id}")->assertForbidden();
 
-        // Unassigned staff and admins stay global.
+        // Unassigned operational staff fail closed; admins stay global.
         $this->as($this->staff());
-        $this->getJson('/api/staff/applications')->assertOk()->assertJsonPath('data.meta.total', 2);
+        $this->getJson('/api/staff/applications')->assertOk()->assertJsonPath('data.meta.total', 0);
 
         $this->as($this->staff('admin'));
         $this->getJson("/api/staff/applications/{$appUnrouted->id}")->assertOk();
@@ -328,7 +337,7 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
             ->assertForbidden();
     }
 
-    public function test_activity_trail_is_scoped_to_the_viewers_branch(): void
+    public function test_activity_trail_is_forbidden_to_staff_and_scoped_for_admin(): void
     {
         $tunis = Branch::factory()->default()->create(['ville' => 'Tunis']);
         $sfax = Branch::factory()->create(['ville' => 'Sfax']);
@@ -336,17 +345,13 @@ class AuthorizationMatrixTest extends CreditApplicationTestCase
         $appTunis = $this->submittedApplication('Tunis');
         $appSfax = $this->submittedApplication('Sfax');
 
+        // Staff is forbidden from viewing audit activity
         $this->as($this->staff('staff', $tunis));
         $this->getJson("/api/staff/activity?application_id={$appSfax->id}")
-            ->assertOk()
-            ->assertJsonPath('data.meta.total', 0);
-        $this->assertGreaterThan(
-            0,
-            $this->getJson("/api/staff/activity?application_id={$appTunis->id}")->json('data.meta.total'),
-        );
+            ->assertForbidden();
 
-        // An unassigned staff member sees both branches' rows.
-        $this->as($this->staff());
+        // Admin can view activity across branches
+        $this->as($this->staff('admin'));
         $this->assertGreaterThan(
             0,
             $this->getJson("/api/staff/activity?application_id={$appSfax->id}")->json('data.meta.total'),

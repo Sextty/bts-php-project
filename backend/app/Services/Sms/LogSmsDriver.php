@@ -8,16 +8,15 @@ use App\ValueObjects\OtpMessage;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Dev-safe default: writes the message to the Laravel log instead of sending it anywhere. Used
- * whenever SMS_PROVIDER=log, which is the local default — read the code out of storage/logs.
+ * Dev-safe transport simulator. It records delivery metadata only; OTP values and recipient
+ * identifiers are never written to logs.
  */
 class LogSmsDriver implements SmsProviderInterface
 {
     public function send(User $user, OtpMessage $message): SmsDeliveryResult
     {
-        Log::channel(config('logging.default'))->info('[sms:log-driver] outgoing SMS', [
-            'to' => (string) $user->phone,
-            'message' => $message->body,
+        Log::channel(config('logging.default'))->info('[sms:log-driver] SMS simulated', [
+            'user_id' => $user->id,
         ]);
 
         return SmsDeliveryResult::success();

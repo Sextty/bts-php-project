@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Staff;
 
 use App\Enums\ApiErrorCode;
 use App\Enums\Permission;
-use App\Events\ReportMessageSent;
 use App\Exceptions\ApiException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ReportMessageResource;
@@ -15,6 +14,7 @@ use App\Models\StaffUser;
 use App\Models\User;
 use App\Services\AuditLogService;
 use App\Services\NotificationService;
+use App\Services\ReportMessageBroadcastService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +24,7 @@ class UserBanController extends Controller
     public function __construct(
         private readonly AuditLogService $auditLog,
         private readonly NotificationService $notifications,
+        private readonly ReportMessageBroadcastService $broadcast,
     ) {}
 
     /**
@@ -127,10 +128,10 @@ class UserBanController extends Controller
                 'application_id' => $application->id,
             ]);
 
+            $this->broadcast->send($msg);
+
             return $msg;
         });
-
-        ReportMessageSent::dispatch($message);
 
         return ApiResponse::ok([
             'user' => [
@@ -162,14 +163,15 @@ class UserBanController extends Controller
             $this->auditLog->log('user.unbanned', $user, newState: [
                 'unbanned_by' => $staff->id,
             ]);
-        });
 
-        $this->notifications->notifyUser(
-            $user,
-            'account.reactivated',
-            'Compte BTS Bank débloqué',
-            'Votre compte a été réactivé avec succès par un administrateur BTS Bank.'
-        );
+            $this->notifications->notifyUser(
+                $user,
+                'account.reactivated',
+                'Compte BTS Bank débloqué',
+                'Votre compte a été réactivé avec succès par un administrateur BTS Bank.',
+                dedupeKey: 'account-reactivated-'.$user->id.'-'.$user->updated_at?->getTimestamp(),
+            );
+        });
 
         return ApiResponse::ok([
             'message' => 'Le compte du client a été débloqué avec succès.',

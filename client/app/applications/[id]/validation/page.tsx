@@ -7,19 +7,13 @@ import {
   ArrowRight,
   CheckCircle2,
   ShieldAlert,
-  Eye,
   FileText,
-  FileImage,
-  File,
-  MapPin,
-  Calendar,
-  MessageSquare,
   ArrowLeft,
   Lock,
-  ShieldCheck,
   Building2,
   Send,
   AlertCircle,
+  FileWarning,
   Layers,
   User,
 } from 'lucide-react';
@@ -27,7 +21,6 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { ApplicationStepper } from '@/components/application-stepper';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
-import { STATUS_LABELS } from '@/lib/status-labels';
 import {
   Dialog,
   DialogContent,
@@ -58,6 +51,26 @@ const DECIDED_STATUSES = new Set<CreditApplicationDto['status']>([
   'APPOINTMENT_LOCKED',
   'CANCELLED',
 ]);
+
+interface DisplayValidationIssue {
+  filename: string | null;
+  messages: string[];
+}
+
+function displayValidationIssue(error: string): DisplayValidationIssue {
+  const documentMatch = error.match(/^Document «([^»]+)»\s*:\s*(.+)$/u);
+  const content = documentMatch?.[2] ?? error;
+  const messages = content
+    .replace(/\.\s*$/u, '')
+    .split(/;\s*/u)
+    .map((message) => message.trim())
+    .filter(Boolean);
+
+  return {
+    filename: documentMatch?.[1] ?? null,
+    messages: messages.length > 0 ? messages : [error],
+  };
+}
 
 export default function ValidationStepPage() {
   const router = useRouter();
@@ -126,7 +139,7 @@ export default function ValidationStepPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-3xl px-4 py-10 space-y-4">
           <BackLink href="/applications" label="Retour à mes demandes" />
@@ -142,7 +155,7 @@ export default function ValidationStepPage() {
   const readOnly = DECIDED_STATUSES.has(application.status) || application.status === 'SUBMITTED';
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />
@@ -340,16 +353,56 @@ export default function ValidationStepPage() {
 
             {/* Validation Errors */}
             {validationErrors && validationErrors.length > 0 && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2 text-xs text-red-900">
-                <div className="flex items-center gap-2 font-bold text-red-800">
-                  <ShieldAlert className="size-4 text-red-600" />
-                  <span>Anomalies détectées lors de la vérification :</span>
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="overflow-hidden rounded-2xl border border-red-200 bg-red-50 shadow-xs"
+              >
+                <div className="flex items-start gap-3 border-b border-red-200 bg-red-100/70 px-4 py-3 sm:px-5">
+                  <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-red-600 shadow-xs">
+                    <ShieldAlert className="size-4" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-bold text-red-950">Documents à corriger</h2>
+                    <p className="mt-0.5 text-xs leading-relaxed text-red-800">
+                      La vérification ne peut pas continuer. Voici exactement ce que vous devez modifier.
+                    </p>
+                  </div>
                 </div>
-                <ul className="list-disc list-inside space-y-1">
-                  {validationErrors.map((e, i) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
+
+                <div className="space-y-3 p-4 sm:p-5">
+                  {validationErrors.map((validationError, index) => {
+                    const issue = displayValidationIssue(validationError);
+
+                    return (
+                      <section
+                        key={`${issue.filename ?? 'dossier'}-${index}`}
+                        className="rounded-xl border border-red-200 bg-white p-4 shadow-xs"
+                      >
+                        <div className="flex items-start gap-3">
+                          <FileWarning className="mt-0.5 size-5 shrink-0 text-red-600" aria-hidden="true" />
+                          <div className="min-w-0 flex-1">
+                            <h3 className="break-words text-xs font-bold text-[#0C1825]">
+                              {issue.filename ?? 'Dossier incomplet'}
+                            </h3>
+                            <ul className="mt-2 space-y-2">
+                              {issue.messages.map((message, messageIndex) => (
+                                <li key={messageIndex} className="flex items-start gap-2 text-xs leading-relaxed text-red-900">
+                                  <AlertCircle className="mt-0.5 size-3.5 shrink-0 text-red-500" aria-hidden="true" />
+                                  <span>{message}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </section>
+                    );
+                  })}
+
+                  <p className="text-xs font-medium text-red-900">
+                    Après correction, relancez la vérification de conformité.
+                  </p>
+                </div>
               </div>
             )}
 

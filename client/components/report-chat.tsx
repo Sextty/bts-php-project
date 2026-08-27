@@ -11,7 +11,6 @@ import {
   File,
   Lock,
   Loader2,
-  Image as ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,6 +18,9 @@ import { cn } from '@/lib/utils';
 import { getApiBaseUrl, ApiError } from '@/lib/api/client';
 import type { ReportMessageDto } from '@/lib/api/reports';
 import { createEchoClient } from '@/lib/echo';
+
+const REPORT_ATTACHMENT_FORMATS =
+  '.pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt,.ppt,.pptx';
 
 interface ReportChatProps {
   applicationId: number;
@@ -31,6 +33,15 @@ interface ReportChatProps {
 }
 
 export function ReportChat({
+  ...props
+}: ReportChatProps) {
+  const lastInitialMessageId = props.initialMessages.at(-1)?.id ?? 0;
+  const sessionKey = `${props.applicationId}:${props.initialMessages.length}:${lastInitialMessageId}:${props.isClosed ? 1 : 0}`;
+
+  return <ReportChatSession key={sessionKey} {...props} />;
+}
+
+function ReportChatSession({
   applicationId,
   currentSenderType,
   getToken,
@@ -45,7 +56,7 @@ export function ReportChat({
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [isClosed, setIsClosed] = useState<boolean>(!!propIsClosed);
-  const [closedReason, setClosedReason] = useState<string | null>(propClosedReason ?? null);
+  const closedReason = propClosedReason ?? null;
   const [connectionState, setConnectionState] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -118,6 +129,7 @@ export function ReportChat({
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     if (file.size > 10 * 1024 * 1024) {
@@ -273,7 +285,7 @@ export function ReportChat({
                 ref={fileInputRef}
                 type="file"
                 onChange={handleFileSelect}
-                accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                accept={REPORT_ATTACHMENT_FORMATS}
                 className="hidden"
                 id={`file-attach-${applicationId}`}
               />
@@ -318,4 +330,3 @@ export function ReportChat({
     </div>
   );
 }
-

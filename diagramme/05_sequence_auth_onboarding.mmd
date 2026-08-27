@@ -1,93 +1,61 @@
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#E3F2FD',
-    'primaryBorderColor': '#1976D2',
-    'primaryTextColor': '#0D47A1',
-    'actorLineColor': '#455A64',
-    'actorBkg': '#E3F2FD',
-    'actorBorder': '#1565C0',
-    'actorTextColor': '#0D47A1',
-    'signalColor': '#37474F',
-    'signalTextColor': '#263238',
-    'labelBoxBkgColor': '#ECEFF1',
-    'labelBoxBorderColor': '#B0BEC5',
-    'labelTextColor': '#263238',
-    'loopTextColor': '#263238',
-    'noteBorderColor': '#90CAF9',
-    'noteBkgColor': '#E3F2FD',
-    'noteTextColor': '#0D47A1',
-    'activationBorderColor': '#1976D2',
-    'activationBkgColor': '#BBDEFB',
-    'sequenceNumberColor': '#FFFFFF'
-  }
-}}%%
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
 sequenceDiagram
-    %% ----------------------------------------------------
-    %% BTS BANK - SEQUENCE: AUTHENTICATION & ONBOARDING
-    %% ----------------------------------------------------
     autonumber
+    actor C as Client
+    participant FE as Portail client
+    participant API as API Laravel 12
+    participant AUTH as CustomerAuthService
+    participant OTP as OtpService
+    participant CACHE as Cache pre-auth
+    participant DB as MariaDB
+    participant MSG as E-mail / SMS
+    participant G as Google Identity
 
-    box rgb(227, 242, 253) Frontend
-        actor User as "Client / Demandeur"
-        participant FE as "Client Portal (Next.js 3000)"
-    end
-
-    box rgb(255, 243, 224) Backend Services
-        participant API as "API Gateway / AuthController"
-        participant OTP as "OtpService"
-        participant DB as "MySQL Database"
-    end
-
-    box rgb(232, 245, 233) External
-        participant Mail as "Gmail SMTP / Resend"
-    end
-
-    %% ----------------------------------------------------
-    %% 1. REGISTRATION FLOW (Blue Rect)
-    %% ----------------------------------------------------
-    rect rgb(227, 242, 253)
-        note over User, Mail: 1. Registration Flow (Inscription & Envoi OTP)
-        User->>FE: Fills form (Email, Phone, Password)
+    alt Inscription par mot de passe
+        C->>FE: Saisit identite, e-mail, telephone, mot de passe
         FE->>API: POST /api/auth/register
-        API->>DB: Verify uniqueness & create User (unverified)
-        API->>OTP: generateAndSend(user, 'REGISTER')
-        OTP->>DB: Insert 6-digit code (expires 10min)
-        OTP->>Mail: Send email with OTP code
-        Mail-->>User: Email received with OTP code
-        API-->>FE: HTTP 200 { status: 'OTP_SENT', preAuthToken }
-        FE-->>User: Show /register/verify-otp screen
-    end
-
-    %% ----------------------------------------------------
-    %% 2. OTP VERIFICATION FLOW (Green Rect)
-    %% ----------------------------------------------------
-    rect rgb(232, 245, 233)
-        note over User, Mail: 2. OTP Verification Flow (Validation & Session Token)
-        User->>FE: Enters OTP code
-        FE->>API: POST /api/auth/verify-otp
-        API->>OTP: verifyCode(code, purpose)
-        OTP->>DB: Validate match & expiration
-        OTP->>DB: Mark OTP as used
-        API->>DB: Set user.email_verified_at = now()
-        API->>API: Generate Sanctum Personal Access Token
-        API-->>FE: HTTP 200 { user, token }
-        FE->>FE: Stores token (localStorage / Cookie)
-        FE-->>User: Redirect to /dashboard
-    end
-
-    %% ----------------------------------------------------
-    %% 3. LOGIN FLOW (Amber Rect)
-    %% ----------------------------------------------------
-    rect rgb(255, 243, 224)
-        note over User, Mail: 3. Login Flow (2FA Challenge & Authentification)
-        User->>FE: POST /api/auth/login (email, password)
+        API->>DB: Cree users(status=active, provider=password)
+        API->>AUTH: beginOtpChallenge(registration)
+        AUTH->>OTP: Genere un code aleatoire a 6 chiffres
+        OTP->>DB: Stocke code_hash, expiration, tentatives
+        OTP->>MSG: Envoie le code sans le journaliser
+        AUTH->>CACHE: Stocke un pre_auth_token opaque (5 min)
+        API-->>FE: 201 user_id + pre_auth_token
+        C->>FE: Saisit le code OTP
+        FE->>API: POST /api/auth/verify-registration-otp
+        API->>AUTH: completeOtpChallenge
+        AUTH->>OTP: Verifie expiration, hash, limite et consommation atomique
+        OTP->>DB: consumed_at et phone_verified_at
+        AUTH->>DB: Cree un jeton Sanctum
+        API-->>FE: access_token + profil
+    else Connexion par mot de passe
+        C->>FE: Identifiant + mot de passe
         FE->>API: POST /api/auth/login
-        API->>DB: Hash::check(password)
-        API->>OTP: generateAndSend(user, 'LOGIN')
-        OTP->>DB: Insert 6-digit code (expires 10min)
-        OTP->>Mail: Send login code
-        Mail-->>User: Email received with login code
-        API-->>FE: HTTP 200 { status: '2FA_CHALLENGE', preAuthToken }
-        FE-->>User: Show /login/verify-otp screen
+        API->>AUTH: Verifie credentials et statut
+        AUTH->>OTP: Lance challenge login
+        OTP->>DB: Remplace tout ancien OTP actif
+        OTP->>MSG: Envoie OTP
+        API-->>FE: pre_auth_token
+        FE->>API: POST /api/auth/login/verify-otp
+        API->>OTP: Consomme OTP de facon atomique
+        API->>DB: Cree un jeton Sanctum limite dans le temps
+        API-->>FE: access_token + profil
+    else Google OAuth
+        C->>FE: Selectionne Google
+        FE->>G: Obtient google_id_token
+        FE->>API: POST /api/auth/google
+        API->>G: Verifie signature et e-mail Google
+        API->>DB: Lie ou cree users(auth_provider=google)
+        alt Telephone deja verifie
+            API->>DB: Cree directement un jeton Sanctum
+            Note over API,DB: F-015: le statut suspendu n'est pas recontrole ici
+            API-->>FE: access_token + profil
+        else Telephone absent ou non verifie
+            API-->>FE: requires_phone ou requires_otp + pre_auth_token
+            FE->>API: POST /api/auth/google/set-phone si necessaire
+            API->>OTP: Envoie OTP registration
+            FE->>API: POST /api/auth/google/verify-otp
+            API->>DB: phone_verified_at + jeton Sanctum
+            API-->>FE: access_token + profil
+        end
     end

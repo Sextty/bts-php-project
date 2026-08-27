@@ -45,6 +45,6 @@ class ApplicationNumberService
             $counter->increment('last_number');
 
             return sprintf('%s-%d-%06d', $prefix, $year, $counter->last_number);
-        });
+        }, 5);
     }
 }

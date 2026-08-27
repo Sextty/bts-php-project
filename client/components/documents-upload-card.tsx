@@ -9,14 +9,8 @@ import {
   FileImage,
   File,
   UploadCloud,
-  CheckCircle2,
-  CheckSquare,
-  Square,
-  Sparkles,
   Layers,
   Check,
-  Plus,
-  AlertCircle,
 } from 'lucide-react';
 import { ErrorAlert } from '@/components/error-alert';
 import {
@@ -47,6 +41,13 @@ export interface CategoryInfo {
 
 export const DOCUMENT_CATEGORIES: CategoryInfo[] = [
   {
+    id: 'eqp',
+    code: 'EQP',
+    label: 'Équipement Professionnel',
+    desc: 'Factures proforma machines, devis matériel, outillage',
+    color: { bg: 'bg-purple-50/70', text: 'text-purple-800', border: 'border-purple-200', badgeBg: 'bg-purple-100 text-purple-800 border-purple-200' },
+  },
+  {
     id: 'fdr',
     code: 'FDR',
     label: 'Fonds de Roulement',
@@ -68,11 +69,18 @@ export const DOCUMENT_CATEGORIES: CategoryInfo[] = [
     color: { bg: 'bg-emerald-50/70', text: 'text-emerald-800', border: 'border-emerald-200', badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
   },
   {
-    id: 'epr',
-    code: 'EPR',
-    label: 'Équipement Professionnel',
-    desc: 'Factures proforma machines, devis matériel, véhicules',
-    color: { bg: 'bg-purple-50/70', text: 'text-purple-800', border: 'border-purple-200', badgeBg: 'bg-purple-100 text-purple-800 border-purple-200' },
+    id: 'devis',
+    code: 'DEVIS',
+    label: 'Devis & Factures Proforma',
+    desc: 'Devis fournisseurs généraux et offres de prix',
+    color: { bg: 'bg-cyan-50/70', text: 'text-cyan-800', border: 'border-cyan-200', badgeBg: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+  },
+  {
+    id: 'contrat_location',
+    code: 'BAIL',
+    label: 'Contrat de Location / Local',
+    desc: 'Contrat de bail commercial ou titre de propriété',
+    color: { bg: 'bg-amber-50/70', text: 'text-amber-800', border: 'border-amber-200', badgeBg: 'bg-amber-100 text-amber-800 border-amber-200' },
   },
   {
     id: 'cin',
@@ -82,17 +90,17 @@ export const DOCUMENT_CATEGORIES: CategoryInfo[] = [
     color: { bg: 'bg-rose-50/70', text: 'text-rose-800', border: 'border-rose-200', badgeBg: 'bg-rose-100 text-rose-800 border-rose-200' },
   },
   {
-    id: 'facture',
-    code: 'DEVIS',
-    label: 'Devis & Factures Proforma',
-    desc: 'Devis fournisseurs généraux et offres de prix',
-    color: { bg: 'bg-cyan-50/70', text: 'text-cyan-800', border: 'border-cyan-200', badgeBg: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+    id: 'diplome',
+    code: 'DIPLOME',
+    label: 'Diplôme / Formation',
+    desc: 'Diplômes, certificats professionnels, attestations',
+    color: { bg: 'bg-indigo-50/70', text: 'text-indigo-800', border: 'border-indigo-200', badgeBg: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
   },
   {
     id: 'other',
     code: 'AUTRE',
     label: 'Autres Justificatifs',
-    desc: 'Statuts de société, attestations, diplômes, RNE',
+    desc: 'Statuts de société, attestations diverses, RNE',
     color: { bg: 'bg-slate-50/70', text: 'text-slate-800', border: 'border-slate-200', badgeBg: 'bg-slate-100 text-slate-800 border-slate-200' },
   },
 ];

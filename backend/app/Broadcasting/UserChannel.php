@@ -14,6 +14,9 @@ class UserChannel
 {
     public function join(mixed $user, int $id): bool
     {
-        return $user instanceof User && (int) $user->id === (int) $id;
+        return $user instanceof User
+            && ! $user->isBanned()
+            && $user->status === 'active'
+            && (int) $user->id === (int) $id;
     }
 }

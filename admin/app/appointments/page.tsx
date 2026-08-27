@@ -11,9 +11,7 @@ import {
   Phone,
   Printer,
   Search,
-  Filter,
   CheckCircle2,
-  AlertCircle,
   XCircle,
   ExternalLink,
   ChevronRight,
@@ -21,14 +19,10 @@ import {
   MessageSquare,
   FileText,
   User,
-  Shield,
-  Layers,
   Sparkles,
   Navigation,
   Globe,
-  ArrowUpDown,
 } from 'lucide-react';
-import { StaffHeader } from '@/components/staff-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { PageLoading } from '@/components/page-loading';
 import {
@@ -78,6 +72,7 @@ export default function AdminAppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branchError, setBranchError] = useState<string | null>(null);
 
   // Fetch Appointments
   const fetchAppointments = useCallback(async (isRefresh = false) => {
@@ -115,17 +110,18 @@ export default function AdminAppointmentsPage() {
     try {
       const res = await getBranchesOverview();
       setBranches(res.branches || []);
+      setBranchError(null);
     } catch (err: unknown) {
-      console.error('Failed to load branches overview', err);
+      setBranchError(err instanceof ApiError ? err.message : 'Impossible de charger l’annuaire des agences.');
     }
   }, []);
 
   useEffect(() => {
-    fetchAppointments();
+    queueMicrotask(() => void fetchAppointments());
   }, [fetchAppointments]);
 
   useEffect(() => {
-    fetchBranches();
+    queueMicrotask(() => void fetchBranches());
   }, [fetchBranches]);
 
   // Filtered branches for Tab 2
@@ -163,12 +159,10 @@ export default function AdminAppointmentsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8]">
-      <StaffHeader role="admin" />
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-8 space-y-8">
+    <div>
+      <div className="admin-page space-y-8">
         {/* Header Title Section */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="admin-page-hero flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FDF2F2] text-[#C0272D] border border-[#FECACA]">
@@ -200,7 +194,7 @@ export default function AdminAppointmentsPage() {
           </div>
         </div>
 
-        {error && <ErrorAlert message={error} />}
+        <ErrorAlert message={error ?? branchError} />
 
         {/* Tab Navigation */}
         <div className="flex border-b border-[#E0E4E9] gap-4">
@@ -280,7 +274,7 @@ export default function AdminAppointmentsPage() {
               <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-xs">
                 <div className="text-[11px] font-medium text-blue-800 uppercase tracking-wider flex items-center gap-1">
                   <Calendar className="size-3 text-blue-600" />
-                  Aujourd'hui
+                  Aujourd’hui
                 </div>
                 <div className="text-2xl font-bold text-blue-700 mt-1">{stats.today}</div>
                 <div className="text-[10px] text-blue-600 mt-1">Prévus ce jour</div>
@@ -358,7 +352,7 @@ export default function AdminAppointmentsPage() {
                   className="text-xs px-3 py-2 rounded-lg border border-[#E0E4E9] bg-white text-gray-700 focus:outline-none focus:border-[#C0272D]"
                 >
                   <option value="all">Toutes les Dates</option>
-                  <option value="today">Aujourd'hui</option>
+                  <option value="today">Aujourd’hui</option>
                   <option value="upcoming">À venir (Futurs)</option>
                   <option value="past">Passés (Historique)</option>
                 </select>
@@ -733,7 +727,7 @@ export default function AdminAppointmentsPage() {
             </div>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }

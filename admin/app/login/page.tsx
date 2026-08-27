@@ -3,7 +3,6 @@
 import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Shield, Loader2, Lock } from 'lucide-react';
-import { AuthCard } from '@/components/auth-card';
 import { ErrorAlert } from '@/components/error-alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,7 +36,7 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main id="main" className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F4F6F8] p-4">
+    <main id="main" className="admin-root relative flex min-h-screen items-center justify-center overflow-hidden p-4">
       {/* Decorative background */}
       <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-96 w-96 rounded-full bg-[#C0272D]/8 blur-3xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-[#C0272D]/5 blur-3xl" />
@@ -133,7 +132,7 @@ export default function AdminLoginPage() {
         </div>
 
         <p className="text-[11px] text-[#3D5166]/60 text-center">
-          © {new Date().getFullYear()} BTS Bank — Portail d'Administration Sécurisé
+          © {new Date().getFullYear()} BTS Bank — Portail d’Administration Sécurisé
         </p>
       </div>
     </main>

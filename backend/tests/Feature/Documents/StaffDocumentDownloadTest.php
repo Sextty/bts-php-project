@@ -112,7 +112,7 @@ class StaffDocumentDownloadTest extends TestCase
             ->assertStatus(403);
     }
 
-    public function test_unassigned_staff_can_download_documents_of_any_branch(): void
+    public function test_unassigned_staff_cannot_download_branch_documents(): void
     {
         Branch::factory()->default()->create(['ville' => 'Tunis']);
         $application = $this->submittedApplication('Tunis');
@@ -121,7 +121,7 @@ class StaffDocumentDownloadTest extends TestCase
         $this->as($this->staff('staff'));
 
         $this->get("/api/staff/applications/{$application->id}/documents/{$document->id}")
-            ->assertOk();
+            ->assertForbidden();
     }
 
     public function test_staff_cannot_download_documents_of_a_draft_application(): void
@@ -139,7 +139,7 @@ class StaffDocumentDownloadTest extends TestCase
         $this->as($this->staff('staff'));
 
         $this->get("/api/staff/applications/{$application->id}/documents/{$document->id}")
-            ->assertStatus(404);
+            ->assertForbidden();
     }
 
     public function test_staff_download_route_rejects_customer_tokens(): void

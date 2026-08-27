@@ -11,11 +11,7 @@ use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
 /**
- * The admin overview and the shared Logs & Traffic screen.
- *
- * The bulk of these tests are about the role boundary rather than the numbers: both roles reach
- * /staff/activity, and the whole design rests on the server — not the UI — deciding that a staff
- * member never sees customers' IP addresses or authentication events.
+ * The admin overview and Logs & Traffic authorization boundaries.
  */
 class DashboardAndActivityTest extends TestCase
 {
@@ -36,7 +32,7 @@ class DashboardAndActivityTest extends TestCase
     private function seedAuditTrail(): CreditApplication
     {
         $customer = User::factory()->create();
-        $application = CreditApplication::create([
+        $application = CreditApplication::query()->forceCreate([
             'user_id' => $customer->id,
             'status' => CreditApplication::STATUS_SUBMITTED,
             'submitted_at' => now()->subHours(4),
@@ -50,7 +46,7 @@ class DashboardAndActivityTest extends TestCase
             'user_agent' => 'Mozilla/5.0 (test)',
         ]);
 
-        // An authentication event: staff must never see this one.
+        // An authentication event
         AuditLog::create([
             'user_id' => $customer->id,
             'action' => 'auth.login.password_verified',
@@ -87,7 +83,6 @@ class DashboardAndActivityTest extends TestCase
         $this->assertSame('SUBMITTED', $response->json('data.pipeline.0.status'));
         $this->assertSame($admin->id, $response->json('data.team.0.staff_user_id'));
         $this->assertSame(1, $response->json('data.team.0.approvals'));
-        // 30 days requested → 30 points, zero-filled, so the chart's x-axis stays even.
         $this->assertCount(30, $response->json('data.timeline'));
     }
 
@@ -96,6 +91,15 @@ class DashboardAndActivityTest extends TestCase
         Sanctum::actingAs($this->staff('staff'), ['*']);
 
         $this->getJson('/api/staff/dashboard')->assertForbidden();
+    }
+
+    public function test_staff_cannot_reach_activity_since_audit_is_separated(): void
+    {
+        $this->seedAuditTrail();
+        Sanctum::actingAs($this->staff('staff'), ['*']);
+
+        $this->getJson('/api/staff/activity')->assertForbidden();
+        $this->getJson('/api/staff/activity/traffic')->assertForbidden();
     }
 
     public function test_admin_sees_authentication_rows_and_network_details(): void
@@ -113,43 +117,19 @@ class DashboardAndActivityTest extends TestCase
         $this->assertArrayHasKey('user_agent', $withIp);
     }
 
-    public function test_staff_never_receives_auth_rows_or_network_details(): void
+    public function test_security_user_sees_authentication_rows_and_network_details(): void
     {
         $this->seedAuditTrail();
-        Sanctum::actingAs($this->staff('staff'), ['*']);
+        Sanctum::actingAs($this->staff('security'), ['*']);
 
-        $response = $this->getJson('/api/staff/activity')->assertOk();
+        $response = $this->getJson('/api/security/activity')->assertOk();
 
-        // Only the application event survives; the auth + otp rows are filtered server-side.
-        $this->assertSame(1, $response->json('data.meta.total'));
-        $this->assertSame('credit_application.created', $response->json('data.logs.0.action'));
+        $this->assertSame(3, $response->json('data.meta.total'));
+        $this->assertContains('auth.login.password_verified', $response->json('data.available_actions'));
 
-        $log = $response->json('data.logs.0');
-        foreach (['ip_address', 'user_agent', 'previous_state', 'new_state'] as $restricted) {
-            $this->assertArrayNotHasKey($restricted, $log, "Staff must not receive {$restricted}.");
-        }
-
-        // The filter dropdown must not leak the existence of restricted actions either.
-        foreach ($response->json('data.available_actions') as $action) {
-            $this->assertStringStartsNotWith('auth.', $action);
-            $this->assertStringStartsNotWith('otp.', $action);
-        }
-    }
-
-    public function test_traffic_totals_follow_the_same_visibility_rules(): void
-    {
-        $this->seedAuditTrail();
-
-        Sanctum::actingAs($this->staff('admin'), ['*']);
-        $admin = $this->getJson('/api/staff/activity/traffic')->assertOk();
-        $this->assertSame(3, $admin->json('data.total_events'));
-        $this->assertSame(1, $admin->json('data.unique_ips'));
-
-        Sanctum::actingAs($this->staff('staff'), ['*']);
-        $staff = $this->getJson('/api/staff/activity/traffic')->assertOk();
-        $this->assertSame(1, $staff->json('data.total_events'));
-        // Null rather than a number: the count itself is a security signal.
-        $this->assertNull($staff->json('data.unique_ips'));
+        $withIp = collect($response->json('data.items'))->firstWhere('ip_address', '203.0.113.7');
+        $this->assertNotNull($withIp, 'Security should receive ip_address.');
+        $this->assertArrayHasKey('user_agent', $withIp);
     }
 
     public function test_a_customer_token_cannot_reach_activity_or_dashboard(): void

@@ -184,8 +184,19 @@ class AppointmentManagementController extends Controller
     public function branchesOverview(Request $request): JsonResponse
     {
         $today = Carbon::today();
+        /** @var StaffUser $staff */
+        $staff = $request->user();
 
         $branches = Branch::query()
+            ->when($staff->isBranchRestricted(), function ($query) use ($staff) {
+                if ($staff->branch_id === null) {
+                    $query->whereRaw('1 = 0');
+
+                    return;
+                }
+
+                $query->whereKey($staff->branch_id);
+            })
             ->withCount([
                 'appointments',
                 'appointments as accepted_appointments_count' => function ($q) {

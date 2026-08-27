@@ -1,0 +1,198 @@
+{
+    "marker": "SYNTHETIC_ANALYTICS_BENCHMARK",
+    "database": "bts_phase6_medium_20260824",
+    "driver": "mysql",
+    "filters": {
+        "from": "2025-08-24",
+        "to": "2026-08-23",
+        "branch_id": null,
+        "status": null
+    },
+    "dataset": {
+        "customers": 50000,
+        "applications": 65000,
+        "appointments": 27763,
+        "audit_logs": 477977
+    },
+    "measurement": {
+        "snapshot_ms": 3506.761,
+        "query_count": 30,
+        "database_query_ms": 3439.58,
+        "slowest_queries": [
+            {
+                "time_ms": 301.29,
+                "sql": "select AVG(TIMESTAMPDIFF(SECOND, ca.submitted_at, decision.decided_at) / 3600.0) as hours from `credit_applications` as `ca` inner join (select credit_application_id, MIN(created_at) as decided_at from ((select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` in (?, ?, ?, ?)) union all (select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` = ? and `analytics_status` in (?, ?, ?, ?))) as `decision_events` group by `credit_application_id`) as `decision` on `decision`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? and `ca`.`submitted_at` is not null limit 1"
+            },
+            {
+                "time_ms": 277.81,
+                "sql": "select COALESCE(cr.code_devise, 'N/A') as currency, COUNT(*) as applications, SUM(COALESCE(cr.montant_global_sollicite, 0)) as requested_total, AVG(cr.montant_global_sollicite) as requested_average from `credit_applications` as `ca` inner join `credit_requests` as `cr` on `cr`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? group by `cr`.`code_devise`"
+            },
+            {
+                "time_ms": 263.46,
+                "sql": "select AVG(TIMESTAMPDIFF(SECOND, decision.decided_at, first_appointment.appointment_at) / 3600.0) as hours from `credit_applications` as `ca` inner join (select credit_application_id, MIN(created_at) as decided_at from ((select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` in (?, ?, ?, ?)) union all (select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` = ? and `analytics_status` in (?, ?, ?, ?))) as `decision_events` group by `credit_application_id`) as `decision` on `decision`.`credit_application_id` = `ca`.`id` inner join (select credit_application_id, MIN(created_at) as appointment_at from `appointments` group by `credit_application_id`) as `first_appointment` on `first_appointment`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? limit 1"
+            },
+            {
+                "time_ms": 261.46,
+                "sql": "select ca.branch_id, ca.status, COUNT(*) as total from `credit_applications` as `ca` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? and `ca`.`branch_id` is not null group by `ca`.`branch_id`, `ca`.`status`"
+            },
+            {
+                "time_ms": 258.01,
+                "sql": "select AVG(TIMESTAMPDIFF(SECOND, ca.submitted_at, decision.decided_at) / 3600.0) as hours from `credit_applications` as `ca` inner join (select credit_application_id, MIN(created_at) as decided_at from ((select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` in (?, ?, ?, ?)) union all (select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` = ? and `analytics_status` in (?, ?, ?, ?))) as `decision_events` group by `credit_application_id`) as `decision` on `decision`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? and `ca`.`submitted_at` is not null limit 1"
+            },
+            {
+                "time_ms": 243.25,
+                "sql": "select ca.branch_id, AVG(TIMESTAMPDIFF(SECOND, ca.submitted_at, decision.decided_at) / 3600.0) as hours from `credit_applications` as `ca` inner join (select credit_application_id, MIN(created_at) as decided_at from ((select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` in (?, ?, ?, ?)) union all (select `credit_application_id`, `created_at` from `audit_logs` where `credit_application_id` is not null and `action` = ? and `analytics_status` in (?, ?, ?, ?))) as `decision_events` group by `credit_application_id`) as `decision` on `decision`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? and `ca`.`submitted_at` is not null and `ca`.`branch_id` is not null group by `ca`.`branch_id`"
+            },
+            {
+                "time_ms": 229.27,
+                "sql": "select count(*) as aggregate from `credit_applications` as `ca` inner join `documents` as `d` on `d`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? and `d`.`document_type` = ?"
+            },
+            {
+                "time_ms": 182.99,
+                "sql": "select COUNT(cr.id) as applications_with_amount, SUM(COALESCE(cr.montant_global_sollicite, 0)) as requested_total, AVG(cr.montant_global_sollicite) as requested_average from `credit_applications` as `ca` inner join `credit_requests` as `cr` on `cr`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? limit 1"
+            },
+            {
+                "time_ms": 182.25,
+                "sql": "select SUM(COALESCE(cr.montant_eqp, 0)) as eqp, SUM(COALESCE(cr.montant_fdr, 0)) as fdr, SUM(COALESCE(cr.montant_amg, 0)) as amg, SUM(COALESCE(cr.montant_chp, 0)) as chp from `credit_applications` as `ca` inner join `credit_requests` as `cr` on `cr`.`credit_application_id` = `ca`.`id` where `ca`.`deleted_at` is null and `ca`.`created_at` >= ? and `ca`.`created_at` <= ? limit 1"
+            },
+            {
+                "time_ms": 134.34,
+                "sql": "SELECT COALESCE(p.type_projet, 'Non renseigné') AS label, COUNT(*) AS count FROM projects AS p FORCE INDEX (projects_type_application_index) STRAIGHT_JOIN credit_applications AS ca ON ca.id = p.credit_application_id WHERE ca.deleted_at IS NULL AND ca.created_at >= ? AND ca.created_at <= ? GROUP BY p.type_projet ORDER BY count DESC LIMIT 30"
+            }
+        ],
+        "memory_delta_bytes": 2097152,
+        "peak_memory_bytes": 31457280,
+        "response_bytes": 81608
+    },
+    "plans": {
+        "application_statuses": [
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "credit_applications",
+                "type": "index",
+                "possible_keys": "credit_applications_created_at_index",
+                "key": "credit_applications_status_index",
+                "key_len": "202",
+                "ref": null,
+                "rows": "64362",
+                "Extra": "Using where"
+            }
+        ],
+        "branch_workload": [
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "credit_applications",
+                "type": "index",
+                "possible_keys": "credit_applications_created_at_index",
+                "key": "credit_apps_branch_status_created_index",
+                "key_len": "224",
+                "ref": null,
+                "rows": "64362",
+                "Extra": "Using where"
+            }
+        ],
+        "appointment_utilization": [
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "appointments",
+                "type": "index",
+                "possible_keys": null,
+                "key": "appointments_branch_date_status_time_index",
+                "key_len": "96",
+                "ref": null,
+                "rows": "27848",
+                "Extra": "Using where; Using index; Using temporary; Using filesort"
+            }
+        ],
+        "workflow_decisions": [
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "audit_logs",
+                "type": "range",
+                "possible_keys": "audit_logs_created_at_index,audit_logs_action_created_index,audit_logs_action_status_app_created_index",
+                "key": "audit_logs_action_status_app_created_index",
+                "key_len": "1225",
+                "ref": null,
+                "rows": "78768",
+                "Extra": "Using where; Using index; Using temporary; Using filesort"
+            }
+        ],
+        "project_geography": [
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "p",
+                "type": "index",
+                "possible_keys": null,
+                "key": "projects_ville_application_index",
+                "key_len": "1031",
+                "ref": null,
+                "rows": "47352",
+                "Extra": "Using index"
+            },
+            {
+                "id": 1,
+                "select_type": "SIMPLE",
+                "table": "ca",
+                "type": "eq_ref",
+                "possible_keys": "PRIMARY,credit_applications_created_at_index",
+                "key": "PRIMARY",
+                "key_len": "8",
+                "ref": "bts_phase6_medium_20260824.p.credit_application_id",
+                "rows": "1",
+                "Extra": "Using where"
+            }
+        ]
+    },
+    "data_quality": {
+        "passed": true,
+        "total_violations": 0,
+        "checks": {
+            "valid_application_statuses": {
+                "passed": true,
+                "violations": 0
+            },
+            "submission_not_before_creation": {
+                "passed": true,
+                "violations": 0
+            },
+            "submitted_applications_have_branch": {
+                "passed": true,
+                "violations": 0
+            },
+            "appointments_have_application": {
+                "passed": true,
+                "violations": 0
+            },
+            "appointments_match_application_branch": {
+                "passed": true,
+                "violations": 0
+            },
+            "automatic_appointments_start_after_creation_day": {
+                "passed": true,
+                "violations": 0
+            },
+            "unique_request_numbers": {
+                "passed": true,
+                "violations": 0
+            },
+            "unique_client_numbers": {
+                "passed": true,
+                "violations": 0
+            },
+            "unique_project_numbers": {
+                "passed": true,
+                "violations": 0
+            },
+            "financing_breakdown_matches_requested_total": {
+                "passed": true,
+                "violations": 0
+            }
+        }
+    },
+    "measured_at": "2026-08-24T17:44:45+00:00"
+}

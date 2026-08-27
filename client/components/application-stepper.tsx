@@ -64,9 +64,18 @@ export function ApplicationStepper({ status, current }: { status: ApplicationSta
   const submitted = isSubmitted(status);
 
   return (
-    <div className="space-y-4">
+    <section className="portal-panel space-y-5 p-4 sm:p-5" aria-label="Progression du dossier">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#a82027]">Parcours de demande</p>
+          <p className="mt-1 text-xs text-[#6a7a8b]">Complétez chaque étape pour transmettre votre dossier.</p>
+        </div>
+        <span className="hidden rounded-full bg-[#f3f6f8] px-3 py-1 text-[10px] font-bold text-[#536579] sm:inline-flex">
+          Étape {Math.max(currentIndex + 1, 1)} / {STEPS.length}
+        </span>
+      </div>
       {/* 5-step form progress */}
-      <ol aria-label="Application progress" className="flex items-center gap-2 sm:gap-4">
+      <ol aria-label="Progression de la demande" className="flex items-start gap-1.5 sm:gap-3">
         {STEPS.map((step, index) => {
           const isDone = isStepDone(status, index);
           const isCurrent = index === currentIndex && !submitted;
@@ -75,31 +84,31 @@ export function ApplicationStepper({ status, current }: { status: ApplicationSta
             <li
               key={step.key}
               aria-current={isCurrent ? 'step' : undefined}
-              className="flex flex-1 items-center gap-2 sm:gap-4"
+              className="flex flex-1 items-start gap-1.5 sm:gap-3"
             >
               <div className="flex flex-col items-center gap-1.5">
                 <div
                   aria-hidden
                   className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-full border text-sm font-medium transition-colors',
-                    isDone && 'border-primary bg-primary text-primary-foreground',
-                    isCurrent && !isDone && 'border-primary text-primary',
-                    !isDone && !isCurrent && 'border-border text-muted-foreground'
+                    'flex size-9 shrink-0 items-center justify-center rounded-xl border text-xs font-bold shadow-sm transition-all',
+                    isDone && 'border-[#c0272d] bg-[#c0272d] text-white',
+                    isCurrent && !isDone && 'border-[#c0272d] bg-[#fdf2f2] text-[#a82027] ring-4 ring-[#c0272d]/10',
+                    !isDone && !isCurrent && 'border-[#dce3ea] bg-white text-[#82909e]'
                   )}
                 >
                   {isDone ? <Check className="size-4" /> : index + 1}
                 </div>
                 <span
                   className={cn(
-                    'text-xs font-medium hidden sm:block',
-                    isCurrent ? 'text-foreground' : 'text-muted-foreground'
+                    'hidden max-w-20 text-center text-[10px] font-semibold leading-tight sm:block',
+                    isCurrent ? 'text-[#0c1825]' : 'text-[#6a7a8b]'
                   )}
                 >
                   {step.label}
                 </span>
               </div>
               {index < STEPS.length - 1 && (
-                <div aria-hidden className={cn('h-px flex-1', isDone ? 'bg-primary' : 'bg-border')} />
+                <div aria-hidden className={cn('mt-4 h-0.5 flex-1 rounded-full', isDone ? 'bg-[#c0272d]' : 'bg-[#dfe5eb]')} />
               )}
             </li>
           );
@@ -108,21 +117,21 @@ export function ApplicationStepper({ status, current }: { status: ApplicationSta
 
       {/* Post-submission review progress */}
       {submitted && (
-        <div className="rounded-lg border border-border/60 bg-card/60 px-4 py-3">
-          <ol aria-label="Review progress" className="flex items-center gap-1 sm:gap-2">
+        <div className="rounded-2xl border border-[#dce3ea] bg-[#f7f9fa] px-4 py-3.5">
+          <ol aria-label="Progression de l’étude" className="flex items-center gap-1 sm:gap-2">
             {REVIEW_PHASES.map((rp, index) => {
               const active = index <= getReviewPhaseIndex(status);
               const Icon = rp.icon;
               return (
                 <li key={rp.phase} className="flex flex-1 items-center gap-1.5 sm:gap-2">
                   <div className="flex items-center gap-1.5">
-                    <Icon className={cn('size-3.5 shrink-0', active ? 'text-primary' : 'text-muted-foreground/50')} />
-                    <span className={cn('text-xs', active ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                    <Icon className={cn('size-3.5 shrink-0', active ? 'text-[#c0272d]' : 'text-[#a8b2bc]')} />
+                    <span className={cn('text-[10px] sm:text-xs', active ? 'font-semibold text-[#1e2d3d]' : 'text-[#82909e]')}>
                       {rp.label}
                     </span>
                   </div>
                   {index < REVIEW_PHASES.length - 1 && (
-                    <div className={cn('h-px flex-1', active && index < getReviewPhaseIndex(status) ? 'bg-primary' : 'bg-border')} />
+                    <div className={cn('h-0.5 flex-1 rounded-full', active && index < getReviewPhaseIndex(status) ? 'bg-[#c0272d]' : 'bg-[#dfe5eb]')} />
                   )}
                 </li>
               );
@@ -130,6 +139,6 @@ export function ApplicationStepper({ status, current }: { status: ApplicationSta
           </ol>
         </div>
       )}
-    </div>
+    </section>
   );
 }

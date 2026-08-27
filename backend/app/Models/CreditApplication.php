@@ -82,11 +82,6 @@ class CreditApplication extends Model
 
     protected $fillable = [
         'user_id',
-        'status',
-        'submitted_at',
-        'rejection_reason',
-        'decided_by_staff_user_id',
-        'decided_by_admin_user_id',
         'branch_id',
         'report_closed_at',
         'report_closed_by_staff_id',
@@ -127,14 +122,18 @@ class CreditApplication extends Model
     }
 
     /**
-     * The staff-facing list scope. Branch-assigned (non-superuser) staff only ever get rows
-     * routed to their branch; everyone else is unfiltered. Uses a scope so every staff list —
-     * review queue, report inbox — inherits the same rule by construction.
+     * The staff-facing list scope. Operational staff only ever get rows routed to their
+     * explicitly assigned branch; missing assignment returns no rows. Global security and
+     * superuser roles remain unfiltered.
      */
     public function scopeAccessibleToStaff($query, StaffUser $staff)
     {
         if (! $staff->isBranchRestricted()) {
             return $query;
+        }
+
+        if ($staff->branch_id === null) {
+            return $query->whereRaw('1 = 0');
         }
 
         return $query->where('branch_id', $staff->branch_id);
@@ -158,6 +157,18 @@ class CreditApplication extends Model
     public function creditRequest(): HasOne
     {
         return $this->hasOne(CreditRequest::class);
+    }
+
+    /** Public dossier reference stored by the existing credit request record. */
+    public function getApplicationNumberAttribute(): string
+    {
+        $reference = $this->relationLoaded('creditRequest')
+            ? $this->creditRequest?->n_demande
+            : $this->creditRequest()->value('n_demande');
+
+        return is_string($reference) && $reference !== ''
+            ? $reference
+            : 'BTS-'.str_pad((string) $this->getKey(), 8, '0', STR_PAD_LEFT);
     }
 
     public function project(): HasOne
@@ -188,7 +199,7 @@ class CreditApplication extends Model
 
     public function reportMessages(): HasMany
     {
-        return $this->hasMany(ReportMessage::class)->orderBy('created_at');
+        return $this->hasMany(ReportMessage::class);
     }
 
     /**
@@ -206,24 +217,34 @@ class CreditApplication extends Model
     /** True if $status is at or beyond $threshold in the state machine's fixed order. */
     public function hasReached(string $threshold): bool
     {
-        return array_search($this->status, self::STATUS_ORDER, true) >= array_search($threshold, self::STATUS_ORDER, true);
+        $current = array_search($this->status, self::STATUS_ORDER, true);
+        $target = array_search($threshold, self::STATUS_ORDER, true);
+
+        return is_int($current) && is_int($target) && $current >= $target;
     }
 
     /**
-     * True once the report chat is open — for confirmed appointments, locked appointments,
-     * cancellations, or any application with active dialogue.
+     * True once the report chat is open — after cancellation, exhaustion of the four customer
+     * changes, appointment locking, or once an authorized historical conversation exists.
      */
     public function isReportOpen(): bool
     {
         return $this->isCancelled()
             || in_array($this->status, [
-                self::STATUS_STAFF_APPROVED,
-                self::STATUS_APPROVED,
-                self::STATUS_APPOINTMENT_PROPOSED,
-                self::STATUS_APPOINTMENT_CONFIRMED,
                 self::STATUS_APPOINTMENT_LOCKED,
             ], true)
+            || $this->hasReachedAppointmentRescheduleLimit()
             || $this->reportMessages()->exists();
+    }
+
+    public function hasReachedAppointmentRescheduleLimit(): bool
+    {
+        $latest = $this->relationLoaded('appointments')
+            ? $this->appointments->sortByDesc('attempt_number')->first()
+            : $this->latestAppointment();
+
+        return $latest !== null
+            && $latest->rescheduleCount() >= Appointment::MAX_RESCHEDULES;
     }
 
     public function isCancelled(): bool

@@ -20,6 +20,7 @@ interface AppointmentItem {
   branchName?: string;
   branchAddress?: string;
   isAutoScheduled: boolean;
+  remainingReschedules: number;
 }
 
 function extractAppointments(apps: CreditApplicationDto[]): AppointmentItem[] {
@@ -38,6 +39,7 @@ function extractAppointments(apps: CreditApplicationDto[]): AppointmentItem[] {
       branchName: apt.branch?.name,
       branchAddress: apt.branch?.address,
       isAutoScheduled: apt.is_auto_scheduled_future,
+      remainingReschedules: apt.remaining_reschedules,
     });
   }
   return items;
@@ -47,7 +49,7 @@ function statusConfig(status: string) {
   if (status === 'accepted') {
     return { label: 'Confirmé', badgeClass: 'badge-success', icon: CalendarCheck };
   }
-  return { label: 'Proposé', badgeClass: 'badge-warning', icon: Calendar };
+  return { label: 'Demande acceptée', badgeClass: 'badge-success', icon: Calendar };
 }
 
 export function AppointmentsSummary({
@@ -129,6 +131,11 @@ export function AppointmentsSummary({
                       <p className="text-[10px] text-[#3D5166] pt-0.5">
                         Rattaché à : <span className="font-mono font-medium">{apt.applicationNumber}</span>
                       </p>
+                      {apt.status === 'proposed' && (
+                        <p className="text-[11px] font-semibold text-[#0C1825]">
+                          {apt.remainingReschedules} changement{apt.remainingReschedules === 1 ? '' : 's'} restant{apt.remainingReschedules === 1 ? '' : 's'}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex shrink-0 items-center sm:flex-col sm:items-end gap-2">

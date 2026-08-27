@@ -39,7 +39,16 @@ class UpdateClientRequest extends FormRequest
             'etat_civil' => ['required', 'string', 'in:célibataire,marié,divorcé,veuf'],
             'nombre_enfants' => ['required', 'integer', 'min:0', 'max:30'],
             'type_pid' => ['required', 'string', 'in:CIN,Passeport,Carte de séjour'],
-            'numero_pid' => ['required', 'string', 'max:50'],
+            'numero_pid' => [
+                'required',
+                'string',
+                'max:50',
+                function ($attribute, $value, $fail) {
+                    if ($this->input('type_pid') === 'CIN' && ! preg_match('/^[0-9]{8}$/', (string) $value)) {
+                        $fail('Le numéro de la CIN doit comporter exactement 8 chiffres.');
+                    }
+                },
+            ],
             'date_delivrance_pid' => ['required', 'date', 'before_or_equal:today'],
             'lieu_delivrance_pid' => ['required', 'string', 'max:150'],
             'numero_carte_sejour' => ['nullable', 'string', 'max:50'],

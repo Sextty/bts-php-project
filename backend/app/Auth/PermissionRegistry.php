@@ -10,16 +10,11 @@ use App\Enums\Role;
  * table plus the ownership rules in the policies.
  *
  * Roles are looked up by string (not enum), so an unknown or not-yet-activated role degrades to
- * zero permissions instead of an exception — deny by default. Admin and super_admin are
- * superusers (every permission, now and after the enum grows): capabilities are granted by the
- * map, never re-checked per site.
- *
- * Adding a future role (credit_officer, senior_staff, branch_manager, super_admin) is one entry
- * here plus the DB enum widening — no middleware, policy or controller change.
+ * zero permissions instead of an exception — deny by default.
  */
 final class PermissionRegistry
 {
-    /** Every permission in the system, for the superuser roles. */
+    /** Every permission in the system, for the superuser roles (Admin, SuperAdmin). */
     private const ALL = [
         Permission::ApplicationView,
         Permission::ApplicationCreate,
@@ -32,11 +27,37 @@ final class PermissionRegistry
         Permission::DocumentVerify,
         Permission::AppointmentManage,
         Permission::ReportsView,
+        Permission::AnalyticsView,
+        Permission::AnalyticsExport,
         Permission::AuditView,
         Permission::UsersManage,
+        Permission::BankingAccountsView,
+        Permission::BankingAccountsManage,
+        Permission::BankingTransfersPropose,
+        Permission::BankingTransfersApprove,
+        Permission::SecurityDashboardView,
+        Permission::SecurityAuditView,
+        Permission::SecurityAuditExport,
+        Permission::SecurityTelemetryView,
+        Permission::SecurityOsqueryView,
+        Permission::SecurityOsqueryExecute,
+        Permission::SecurityOsqueryExport,
+        Permission::SecurityUsersView,
+        Permission::SecurityUsersSuspend,
+        Permission::SecurityUsersUnsuspend,
+        Permission::SecurityUsersRevokeTokens,
+        Permission::SecurityDataView,
+        Permission::SecurityDocumentsView,
+        Permission::SecurityApplicationsView,
+        Permission::SecurityAppointmentsView,
+        Permission::SecurityVulnerabilityView,
+        Permission::SecurityVulnerabilityScan,
     ];
 
-    /** What a credit officer may do — identical to a plain staff member today. */
+    /**
+     * What a credit officer / staff member may do — strictly operational credit review.
+     * Audit and Osquery permissions are deliberately NOT granted to standard staff.
+     */
     private const CREDIT_OFFICER = [
         Permission::ApplicationView,
         Permission::ApplicationReview,
@@ -44,7 +65,39 @@ final class PermissionRegistry
         Permission::ApplicationReject,
         Permission::DocumentView,
         Permission::ReportsView,
+        Permission::AnalyticsView,
+        Permission::AnalyticsExport,
+    ];
+
+    /**
+     * What a Security Center (SC Team) operator may do:
+     * Full audit, osquery, telemetry, user suspension/token revocation, vulnerability scanning,
+     * and read-only compliance data inspection.
+     * Note: Security is NOT SuperAdmin: they cannot create/approve/reject credit applications.
+     */
+    private const SECURITY_OFFICER = [
         Permission::AuditView,
+        Permission::ApplicationView,
+        Permission::DocumentView,
+        Permission::ReportsView,
+        Permission::UsersManage,
+        Permission::SecurityDashboardView,
+        Permission::SecurityAuditView,
+        Permission::SecurityAuditExport,
+        Permission::SecurityTelemetryView,
+        Permission::SecurityOsqueryView,
+        Permission::SecurityOsqueryExecute,
+        Permission::SecurityOsqueryExport,
+        Permission::SecurityUsersView,
+        Permission::SecurityUsersSuspend,
+        Permission::SecurityUsersUnsuspend,
+        Permission::SecurityUsersRevokeTokens,
+        Permission::SecurityDataView,
+        Permission::SecurityDocumentsView,
+        Permission::SecurityApplicationsView,
+        Permission::SecurityAppointmentsView,
+        Permission::SecurityVulnerabilityView,
+        Permission::SecurityVulnerabilityScan,
     ];
 
     /**
@@ -52,27 +105,30 @@ final class PermissionRegistry
      */
     private const ROLE_PERMISSIONS = [
         Role::Client->value => [
-            // The client's grants are scoped to their own records — see CreditApplicationPolicy,
-            // which is the ownership half of every one of these.
             Permission::ApplicationView,
             Permission::ApplicationCreate,
             Permission::ApplicationUpdate,
             Permission::DocumentView,
             Permission::AppointmentManage,
             Permission::ReportsView,
+            Permission::BankingAccountsView,
         ],
         Role::Staff->value => self::CREDIT_OFFICER,
+        Role::Security->value => self::SECURITY_OFFICER,
         Role::Admin->value => self::ALL,
-        // Future roles — mapped now so the design is testable, spawnable later.
+
+        // Other internal roles
         Role::CreditOfficer->value => self::CREDIT_OFFICER,
         Role::SeniorStaff->value => [
             ...self::CREDIT_OFFICER,
             Permission::DocumentVerify,
+            Permission::BankingTransfersPropose,
         ],
         Role::BranchManager->value => [
             ...self::CREDIT_OFFICER,
             Permission::DocumentVerify,
             Permission::AppointmentManage,
+            Permission::BankingTransfersPropose,
         ],
         Role::SuperAdmin->value => self::ALL,
     ];

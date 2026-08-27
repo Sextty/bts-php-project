@@ -17,17 +17,22 @@ même navigateur (clés de stockage distinctes).
 
 Prérequis : MySQL/XAMPP démarré, la base `bts_php_backend` créée.
 
-**Backend (Laravel — API)**
+**Backend (Laravel — API, e-mails, queue, scheduler et WebSocket)**
 ```bash
 cd backend
-php artisan serve --host 127.0.0.1 --port 8000
+composer run dev
 ```
 
-**3 apps frontend — une par terminal :**
+Utiliser cette commande complète plutôt que `php artisan serve` seul. Les e-mails de décision
+(`admin.approved`, `admin.rejected`, `staff.rejected`) passent par la queue : sans worker, ils
+restent enregistrés mais ne sont pas envoyés.
+
+**4 apps frontend — une par terminal :**
 ```bash
 cd client   && npm install && npm run dev   # → http://localhost:3000
 cd staff    && npm install && npm run dev   # → http://localhost:3001
 cd admin    && npm install && npm run dev   # → http://localhost:3002
+cd sc       && npm install && npm run dev   # → http://localhost:3003
 ```
 
 **Websockets (chat "Report" — optionnel, seulement si tu utilises le chat)**

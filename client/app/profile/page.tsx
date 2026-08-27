@@ -5,20 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   User,
-  Mail,
-  Phone,
   ShieldCheck,
-  BadgeCheck,
-  KeyRound,
   CreditCard,
   AlertCircle,
   ArrowRight,
   LogOut,
-  Building2,
-  TrendingUp,
   FileText,
-  Calendar,
-  CheckCircle2,
   Shield,
   Info,
 } from 'lucide-react';
@@ -84,7 +76,7 @@ export default function ProfilePage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-10 space-y-4">
           <BackLink href="/dashboard" label="Retour au tableau de bord" />
@@ -123,7 +115,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-5xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href="/dashboard" label="Retour au tableau de bord" />
@@ -167,8 +159,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="btn-outline text-xs inline-flex items-center gap-1.5"
-                style={{ padding: '6px 14px' }}
+                className="btn-outline gap-1.5 px-4 text-xs"
               >
                 <LogOut className="size-3.5" />
                 <span>Déconnexion</span>

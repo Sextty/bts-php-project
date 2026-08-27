@@ -6,7 +6,7 @@ export interface StaffUserDto {
   first_name: string;
   last_name: string;
   email: string;
-  role: 'staff' | 'admin';
+  role: 'staff' | 'admin' | 'super_admin';
 }
 
 export interface StaffApplicationDto extends CreditApplicationDto {
@@ -40,8 +40,12 @@ export function staffLogout() {
   return apiFetch<null>('/staff/logout', { method: 'POST', auth: 'staff' });
 }
 
-export function listStaffApplications(status?: ApplicationStatus) {
-  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+export function listStaffApplications(status?: ApplicationStatus | readonly ApplicationStatus[], page: number = 1) {
+  const params = new URLSearchParams();
+  const statuses = Array.isArray(status) ? status : status ? [status] : [];
+  statuses.forEach((value) => params.append('status[]', value));
+  if (page > 1) params.set('page', String(page));
+  const query = params.size > 0 ? `?${params.toString()}` : '';
 
   return apiFetch<{ applications: StaffApplicationDto[]; meta: { current_page: number; last_page: number; total: number } }>(
     `/staff/applications${query}`,

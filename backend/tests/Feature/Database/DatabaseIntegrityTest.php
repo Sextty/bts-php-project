@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Database;
 
+use App\Models\Appointment;
+use App\Models\Branch;
 use App\Models\CreditApplication;
 use App\Models\Document;
 use App\Services\AuditLogService;
@@ -62,7 +64,7 @@ class DatabaseIntegrityTest extends CreditApplicationTestCase
     {
         // The application is created directly (bypassing the API) so the mocked audit backend
         // only interferes with the upload's own audit write.
-        $application = CreditApplication::create([
+        $application = CreditApplication::query()->forceCreate([
             'user_id' => $this->user->id,
             'status' => CreditApplication::STATUS_DRAFT,
         ]);
@@ -84,7 +86,7 @@ class DatabaseIntegrityTest extends CreditApplicationTestCase
 
     public function test_a_failed_client_save_rolls_back_the_whole_step(): void
     {
-        $application = CreditApplication::create([
+        $application = CreditApplication::query()->forceCreate([
             'user_id' => $this->user->id,
             'status' => CreditApplication::STATUS_DRAFT,
         ]);
@@ -102,5 +104,24 @@ class DatabaseIntegrityTest extends CreditApplicationTestCase
         $this->assertNull($application->client);
         $this->assertSame(CreditApplication::STATUS_DRAFT, $application->status);
         $this->assertSame(0, DB::table('application_number_counters')->where('type', 'CL')->count());
+    }
+
+    public function test_appointment_attempt_number_is_unique_per_application(): void
+    {
+        $application = CreditApplication::factory()->create();
+        $branch = Branch::factory()->create();
+        $attributes = [
+            'credit_application_id' => $application->id,
+            'branch_id' => $branch->id,
+            'attempt_number' => 1,
+            'scheduled_date' => now()->addDay()->toDateString(),
+            'scheduled_time' => '09:00:00',
+            'status' => Appointment::STATUS_PROPOSED,
+        ];
+
+        Appointment::create($attributes);
+
+        $this->expectException(\Illuminate\Database\QueryException::class);
+        Appointment::create(array_merge($attributes, ['scheduled_time' => '11:00:00']));
     }
 }

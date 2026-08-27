@@ -7,7 +7,6 @@ import {
   ShieldCheck,
   BadgeCheck,
   KeyRound,
-  CreditCard,
   AlertCircle,
   ArrowRight,
 } from 'lucide-react';

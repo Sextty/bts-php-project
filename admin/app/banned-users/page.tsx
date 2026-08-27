@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useTransition } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   UserX,
@@ -32,12 +32,9 @@ import {
   type BannedUserDto,
 } from '@/lib/api/reports';
 import { getStaffToken } from '@/lib/auth/staff-token';
-import { cn } from '@/lib/utils';
 
 export default function BannedUsersPage() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
   const [bannedUsers, setBannedUsers] = useState<BannedUserDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -72,7 +69,7 @@ export default function BannedUsersPage() {
       router.replace('/login');
       return;
     }
-    fetchBannedUsers(search, page);
+    queueMicrotask(() => void fetchBannedUsers(search, page));
   }, [fetchBannedUsers, router, page, search]);
 
   const handleSearchChange = (val: string) => {
@@ -104,9 +101,9 @@ export default function BannedUsersPage() {
   }
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-6">
+    <div className="admin-page">
       {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="admin-page-hero flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <div className="size-9 rounded-xl bg-red-100 flex items-center justify-center text-[#C0272D]">

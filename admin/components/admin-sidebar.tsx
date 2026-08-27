@@ -15,6 +15,9 @@ import {
   Shield,
   ChevronRight,
   UserX,
+  CalendarClock,
+  AlertCircle,
+  ChartNoAxesCombined,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
 import { staffLogout } from '@/lib/api/staff';
@@ -25,6 +28,8 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { href: '/', label: 'Tableau de bord', icon: LayoutDashboard, exact: true },
   { href: '/applications', label: 'Dossiers', icon: FolderOpen },
+  { href: '/appointments', label: 'Rendez-vous', icon: CalendarClock },
+  { href: '/analytics', label: 'Analytics', icon: ChartNoAxesCombined },
   { href: '/banned-users', label: 'Clients Bannis', icon: UserX },
   { href: '/activity', label: "Journal d'audit", icon: Activity },
   { href: '/reports', label: 'Discussions', icon: MessageSquareText },
@@ -36,6 +41,7 @@ export function AdminSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationDto[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
 
   const unreadCount = (notifications || []).filter((n) => !n?.read_at).length;
 
@@ -44,6 +50,7 @@ export function AdminSidebar() {
     if (!getStaffToken()) return;
     getNotifications()
       .then((res) => {
+        setNotificationError(null);
         if (Array.isArray(res)) {
           setNotifications(res);
         } else if (res && Array.isArray((res as { notifications?: NotificationDto[] }).notifications)) {
@@ -54,8 +61,22 @@ export function AdminSidebar() {
       })
       .catch(() => {
         setNotifications([]);
+        setNotificationError('Notifications indisponibles. Réessayez plus tard.');
       });
   }, []);
+
+  useEffect(() => {
+    if (!mobileOpen && !notifOpen) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      setMobileOpen(false);
+      setNotifOpen(false);
+    }
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [mobileOpen, notifOpen]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -72,7 +93,10 @@ export function AdminSidebar() {
     try {
       await markNotificationsRead();
       setNotifications((prev) => (prev || []).map((n) => ({ ...n, read_at: n.read_at ?? new Date().toISOString() })));
-    } catch {}
+      setNotificationError(null);
+    } catch {
+      setNotificationError('Impossible de marquer les notifications comme lues.');
+    }
   }
 
   function isActive(href: string, exact?: boolean): boolean {
@@ -83,8 +107,10 @@ export function AdminSidebar() {
   const sidebarContent = (
     <>
       {/* ── Brand Header ── */}
-      <div className="flex items-center gap-3 px-5 pt-6 pb-4">
-        <Logo size={32} />
+      <div className="flex items-center gap-3 border-b border-slate-200/70 px-5 pb-5 pt-6">
+        <div className="flex size-11 items-center justify-center rounded-2xl border border-red-100 bg-white shadow-sm">
+          <Logo size={30} />
+        </div>
         <div className="min-w-0">
           <p className="text-sm font-bold tracking-tight text-[#0C1825]">
             BTS <span className="font-normal text-[#3D5166]">Bank</span>
@@ -97,7 +123,7 @@ export function AdminSidebar() {
       </div>
 
       {/* ── Navigation ── */}
-      <nav aria-label="Navigation principale" className="flex-1 px-3 pt-4 space-y-1">
+      <nav aria-label="Navigation principale" className="flex-1 space-y-1 px-3 py-5">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.href, 'exact' in item ? item.exact : false);
           const Icon = item.icon;
@@ -108,10 +134,10 @@ export function AdminSidebar() {
               onClick={() => setMobileOpen(false)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'group relative flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all',
+                'group relative flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#C0272D]/30',
                 active
-                  ? 'bg-[#FDF2F2] text-[#C0272D] shadow-xs'
-                  : 'text-[#3D5166] hover:bg-[#F4F6F8] hover:text-[#0C1825]'
+                  ? 'bg-gradient-to-r from-[#FDF2F2] to-white text-[#C0272D] shadow-sm ring-1 ring-red-100'
+                  : 'text-[#3D5166] hover:bg-white hover:text-[#0C1825] hover:shadow-sm'
               )}
             >
               {active && (
@@ -131,8 +157,10 @@ export function AdminSidebar() {
           <button
             type="button"
             onClick={() => setNotifOpen(!notifOpen)}
+            aria-expanded={notifOpen}
+            aria-haspopup="dialog"
             className={cn(
-              'w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all',
+              'w-full flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium transition-all focus-visible:ring-2 focus-visible:ring-[#C0272D]/30',
               notifOpen
                 ? 'bg-[#FDF2F2] text-[#C0272D]'
                 : 'text-[#3D5166] hover:bg-[#F4F6F8] hover:text-[#0C1825]'
@@ -149,7 +177,7 @@ export function AdminSidebar() {
 
           {/* Notification Dropdown */}
           {notifOpen && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-[#E0E4E9] shadow-lg max-h-80 overflow-hidden z-50">
+            <div role="dialog" aria-label="Notifications" className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-80 overflow-hidden rounded-2xl border border-[#E0E4E9] bg-white shadow-xl">
               <div className="flex items-center justify-between px-4 py-3 border-b border-[#E0E4E9]">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-[#0C1825]">Notifications</h4>
                 {unreadCount > 0 && (
@@ -163,6 +191,12 @@ export function AdminSidebar() {
                 )}
               </div>
               <div className="overflow-y-auto max-h-60">
+                {notificationError && (
+                  <div role="alert" className="flex items-start gap-2 border-b border-red-100 bg-red-50 px-4 py-3 text-[11px] font-medium text-red-700">
+                    <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                    <span>{notificationError}</span>
+                  </div>
+                )}
                 {(notifications || []).length === 0 ? (
                   <div className="py-8 text-center">
                     <Bell className="size-6 text-[#E0E4E9] mx-auto mb-2" />
@@ -197,11 +231,11 @@ export function AdminSidebar() {
       </div>
 
       {/* ── Logout ── */}
-      <div className="px-3 pb-5 pt-2 border-t border-[#E0E4E9] mx-3">
+      <div className="mx-3 border-t border-[#E0E4E9] px-3 pb-5 pt-3">
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-[#3D5166] hover:bg-red-50 hover:text-red-600 transition-all"
+          className="flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-medium text-[#3D5166] transition-all hover:bg-red-50 hover:text-red-600 focus-visible:ring-2 focus-visible:ring-red-200"
         >
           <LogOut className="size-[18px]" />
           <span>Déconnexion</span>
@@ -216,25 +250,29 @@ export function AdminSidebar() {
       <button
         type="button"
         onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-40 lg:hidden size-10 rounded-xl bg-white border border-[#E0E4E9] shadow-sm flex items-center justify-center text-[#0C1825] hover:bg-[#F4F6F8] transition-colors"
+        className="fixed left-4 top-4 z-40 flex size-11 items-center justify-center rounded-2xl border border-[#E0E4E9] bg-white/95 text-[#0C1825] shadow-lg backdrop-blur transition-colors hover:bg-[#F4F6F8] lg:hidden"
         aria-label="Ouvrir le menu"
+        aria-controls="admin-mobile-navigation"
+        aria-expanded={mobileOpen}
       >
         <Menu className="size-5" />
       </button>
 
       {/* ── Desktop Sidebar ── */}
-      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 lg:left-0 lg:w-64 bg-white border-r border-[#E0E4E9] z-30">
+      <aside className="z-30 hidden border-r border-slate-200/80 bg-slate-50/90 shadow-[8px_0_30px_rgba(15,23,42,0.035)] backdrop-blur-xl lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-72 lg:flex-col">
         {sidebarContent}
       </aside>
 
       {/* ── Mobile Overlay ── */}
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+          <button
+            type="button"
+            aria-label="Fermer le menu"
+            className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="absolute inset-y-0 left-0 w-72 bg-white shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
+          <aside id="admin-mobile-navigation" role="dialog" aria-modal="true" aria-label="Menu d’administration" className="absolute inset-y-0 left-0 flex w-72 flex-col bg-slate-50 shadow-2xl animate-in slide-in-from-left duration-200">
             <button
               type="button"
               onClick={() => setMobileOpen(false)}

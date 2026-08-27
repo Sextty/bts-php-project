@@ -17,6 +17,9 @@ class Document extends Model
         'disk_path',
         'mime_type',
         'size_bytes',
+        'malware_scan_status',
+        'malware_signature',
+        'malware_scanned_at',
         'ai_verified_at',
         'ai_is_valid',
         'ai_confidence',
@@ -32,6 +35,7 @@ class Document extends Model
     {
         return [
             'size_bytes' => 'integer',
+            'malware_scanned_at' => 'datetime',
             'ai_verified_at' => 'datetime',
             'ai_is_valid' => 'boolean',
             'ai_extracted_fields' => 'array',

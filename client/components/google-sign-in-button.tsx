@@ -61,7 +61,7 @@ export function GoogleSignInButton() {
         router.push('/auth/google/verify-otp');
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Google sign-in failed.');
+      setError(err instanceof ApiError ? err.message : 'La connexion avec Google a échoué.');
     }
   }, [router]);
 
@@ -81,7 +81,7 @@ export function GoogleSignInButton() {
   }, [handleCredential]);
 
   function handleMissingConfig() {
-    setError('Google Sign-In is not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID in your .env.local file.');
+    setError('La connexion avec Google n’est pas encore configurée.');
   }
 
   if (!CLIENT_ID) {
@@ -92,13 +92,13 @@ export function GoogleSignInButton() {
             <div className="w-full border-t border-border" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">ou</span>
+            <span className="bg-white px-2 text-muted-foreground">ou</span>
           </div>
         </div>
         <button
           type="button"
           onClick={handleMissingConfig}
-          className="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-[#d7dfe7] bg-white px-4 text-sm font-semibold text-[#1e2d3d] transition hover:border-[#c0272d] hover:bg-[#fdf2f2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0272d] focus-visible:ring-offset-2"
         >
           <GoogleLogo />
           Continuer avec Google
@@ -117,14 +117,14 @@ export function GoogleSignInButton() {
           <div className="w-full border-t border-border" />
         </div>
         <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">ou</span>
+            <span className="bg-white px-2 text-muted-foreground">ou</span>
         </div>
       </div>
       <Script
         src="https://accounts.google.com/gsi/client"
         strategy="afterInteractive"
         onReady={renderGoogleButton}
-        onError={() => setError('Failed to load Google Sign-In. Check your network connection.')}
+        onError={() => setError('Impossible de charger Google. Vérifiez votre connexion Internet.')}
       />
       {error && (
         <p className="text-center text-xs text-destructive">{error}</p>

@@ -3,10 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "database:start": "powershell -NoProfile -ExecutionPolicy Bypass -File backend/scripts/start-mariadb-11.4.ps1",
     "e2e": "playwright test",
+    "e2e:isolated": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-e2e-isolated.ps1",
     "e2e:report": "playwright show-report"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "^26.2.0",
     "typescript": "^7.0.2"
   }

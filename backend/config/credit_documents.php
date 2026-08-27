@@ -8,6 +8,18 @@ return [
 
     'max_size_kb' => env('CREDIT_DOCUMENT_MAX_SIZE_KB', 10240),
 
+    // Keep banking validation strict by default. Local synthetic/demo environments may
+    // explicitly disable this when the attachment step is intentionally hidden.
+    'require_at_least_one_for_validation' => (bool) env('DOCUMENTS_REQUIRED_FOR_VALIDATION', true),
+
+    'malware_scan' => [
+        // Set to "required" in production. "optional" keeps XAMPP development usable when
+        // ClamAV is not installed, while recording that the file still needs human controls.
+        'mode' => env('DOCUMENT_MALWARE_SCAN', 'optional'),
+        'binary' => env('CLAMAV_BINARY'),
+        'timeout_seconds' => (int) env('CLAMAV_TIMEOUT_SECONDS', 30),
+    ],
+
     // Every format a client may need to attach: PDF, images, Office documents, CSV/text.
     // The `mimes` rule derives from this list; the AI verification is advisory and best-effort,
     // so non-image files just don't get a verdict instead of blocking the upload.
@@ -36,6 +48,7 @@ return [
     ],
 
     'financing_categories' => [
+        'eqp' => 'Équipement Professionnel (EQP)',
         'fdr' => 'Fonds de Roulement (FDR)',
         'amg' => 'Aménagement des Locaux (AMG)',
         'chp' => 'Achat de Cheptel (CHP)',
@@ -43,18 +56,23 @@ return [
     ],
 
     'types' => [
+        'eqp' => [
+            'label' => 'Équipement Professionnel (EQP) — Devis & Facture matériel',
+            'category' => 'financing',
+            'required' => false,
+        ],
         'fdr' => [
-            'label' => 'Fonds de Roulement (FDR) — Devis / Facture proforma',
+            'label' => 'Fonds de Roulement (FDR) — Devis / Facture proforma stock',
             'category' => 'financing',
             'required' => false,
         ],
         'amg' => [
-            'label' => 'Aménagement des Locaux (AMG) — Devis travaux / Bail',
+            'label' => 'Aménagement des Locaux (AMG) — Devis travaux / Plans',
             'category' => 'financing',
             'required' => false,
         ],
         'chp' => [
-            'label' => 'Achat de Cheptel (CHP) — Facture proforma / Certificat',
+            'label' => 'Achat de Cheptel (CHP) — Facture proforma / Certificat vétérinaire',
             'category' => 'financing',
             'required' => false,
         ],
@@ -63,8 +81,22 @@ return [
             'category' => 'financing',
             'required' => false,
         ],
+        'devis' => [
+            'label' => 'Devis & Factures Proforma Fournisseurs',
+            'category' => 'financing',
+            'required' => false,
+        ],
+        'contrat_location' => [
+            'label' => 'Contrat de Location / Bail Commercial',
+            'category' => 'financing',
+            'required' => false,
+        ],
         'cin' => [
-            'label' => 'Carte d\'Identité Nationale',
+            'label' => 'Carte d\'Identité Nationale (CIN)',
+            'required' => false,
+        ],
+        'diplome' => [
+            'label' => 'Diplôme / Certificat de formation professionnelle',
             'required' => false,
         ],
         'passport' => [

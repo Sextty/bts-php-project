@@ -25,6 +25,9 @@ class GeminiClientTest extends TestCase
             'services.gemini.connect_timeout_seconds' => 2,
             'services.gemini.max_retries' => 2,
             'services.gemini.retry_delay_ms' => 10,
+            'services.gemini.max_output_tokens' => 512,
+            'services.gemini.temperature' => 0.1,
+            'services.gemini.thinking_budget' => 0,
         ]);
     }
 
@@ -68,7 +71,13 @@ class GeminiClientTest extends TestCase
                 && $body['contents'][0]['parts'][0]['inline_data']['mime_type'] === 'application/pdf'
                 && $body['contents'][0]['parts'][0]['inline_data']['data'] === base64_encode('pdf-bytes')
                 && $body['contents'][0]['parts'][1]['text'] === 'Analyze this.'
-                && ($body['generationConfig']['responseMimeType'] ?? null) === 'application/json';
+                && ($body['generationConfig']['responseMimeType'] ?? null) === 'application/json'
+                && ($body['generationConfig']['candidateCount'] ?? null) === 1
+                && ($body['generationConfig']['maxOutputTokens'] ?? null) === 512
+                && ($body['generationConfig']['temperature'] ?? null) === 0.1
+                && ($body['generationConfig']['thinkingConfig']['thinkingBudget'] ?? null) === 0
+                && ($body['generationConfig']['responseJsonSchema']['required'] ?? null)
+                    === ['is_valid', 'confidence', 'comment', 'extracted_fields', 'mismatches'];
         });
     }
 

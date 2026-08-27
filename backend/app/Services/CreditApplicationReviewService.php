@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Appointment;
 use App\Models\CreditApplication;
 use App\Models\StaffUser;
 use Illuminate\Support\Facades\DB;
@@ -63,9 +64,9 @@ class CreditApplicationReviewService
             $this->notifications->notifyUser(
                 $application->user,
                 'staff.approved',
-                'Application approved at first review',
+                'Votre dossier a franchi la première étude',
                 sprintf(
-                    'Your application %s has received initial review approval and is waiting for final management decision.',
+                    'Votre demande %s a reçu un avis favorable de première étude. Elle reste en attente de la décision finale.',
                     $application->application_number,
                 ),
                 [
@@ -82,36 +83,39 @@ class CreditApplicationReviewService
 
     public function staffReject(CreditApplication $application, StaffUser $staff, string $reason, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
-        $this->stateMachine->apply(
-            $application,
-            CreditApplication::STATUS_STAFF_REJECTED,
-            $staff,
-            attributes: ['decided_by_staff_user_id' => $staff->id, 'rejection_reason' => $reason],
-            ip: $ip,
-            userAgent: $userAgent,
-        );
+        return DB::transaction(function () use ($application, $staff, $reason, $ip, $userAgent) {
+            $this->stateMachine->apply(
+                $application,
+                CreditApplication::STATUS_STAFF_REJECTED,
+                $staff,
+                attributes: ['decided_by_staff_user_id' => $staff->id, 'rejection_reason' => $reason],
+                ip: $ip,
+                userAgent: $userAgent,
+            );
 
-        $this->auditLog->log(
-            'credit_application.staff_rejected',
-            $application->user,
-            previousState: ['status' => CreditApplication::STATUS_SUBMITTED],
-            newState: ['status' => CreditApplication::STATUS_STAFF_REJECTED, 'reason' => $reason],
-            ipAddress: $ip,
-            userAgent: $userAgent,
-            application: $application,
-            staffUser: $staff,
-        );
+            $this->auditLog->log(
+                'credit_application.staff_rejected',
+                $application->user,
+                previousState: ['status' => CreditApplication::STATUS_SUBMITTED],
+                newState: ['status' => CreditApplication::STATUS_STAFF_REJECTED, 'reason' => $reason],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $application,
+                staffUser: $staff,
+            );
 
-        $this->notifications->notifyUser(
-            $application->user,
-            'staff.rejected',
-            'Application not approved at first review',
-            'Your application '.$application->application_number.' was not approved: '.$reason,
-            ['application_id' => $application->id, 'application_number' => $application->application_number],
-            dedupeKey: 'application-'.$application->id,
-        );
+            $notification = $this->notifications->notifyUser(
+                $application->user,
+                'staff.rejected',
+                'Décision finale concernant votre demande de crédit',
+                "Votre demande de crédit {$application->application_number} n'a pas été acceptée.\n\nConnectez-vous à votre espace client pour consulter le statut de votre dossier.",
+                ['application_id' => $application->id, 'application_number' => $application->application_number],
+                dedupeKey: 'final-decision-staff-rejected-'.$application->id,
+            );
+            $this->auditFinalDecisionNotificationQueued($application, $staff, $notification?->id, 'rejected', $ip, $userAgent);
 
-        return $application->fresh();
+            return $application->fresh();
+        });
     }
 
     public function staffCancel(CreditApplication $application, StaffUser $staff, ?string $ip = null, ?string $userAgent = null): CreditApplication
@@ -129,9 +133,9 @@ class CreditApplicationReviewService
 
             // Mark any existing appointments as cancelled so their slots become available immediately.
             $application->appointments()
-                ->whereNotIn('status', [\App\Models\Appointment::STATUS_REJECTED, \App\Models\Appointment::STATUS_CANCELLED])
+                ->whereNotIn('status', [Appointment::STATUS_REJECTED, Appointment::STATUS_CANCELLED])
                 ->update([
-                    'status' => \App\Models\Appointment::STATUS_CANCELLED,
+                    'status' => Appointment::STATUS_CANCELLED,
                     'decided_at' => now(),
                 ]);
 
@@ -191,16 +195,33 @@ class CreditApplicationReviewService
             // Chained transition, same pattern as confirmValidationTwoAndLock(): approval
             // immediately triggers the first appointment proposal rather than leaving APPROVED
             // as a dead end the customer has no way to act on.
-            $this->appointmentScheduling->proposeNext($application->fresh(), $admin, $ip, $userAgent);
+            $appointment = $this->appointmentScheduling->proposeNext($application->fresh(), $admin, $ip, $userAgent);
+            $appointment->loadMissing('branch');
+            $portalUrl = rtrim((string) config('app.frontend_url'), '/')
+                .'/applications/'.$application->id.'/appointment';
 
-            $this->notifications->notifyUser(
+            $notification = $this->notifications->notifyUser(
                 $application->user,
                 'admin.approved',
-                'Application approved',
-                'Your application '.$application->application_number.' has been approved. An appointment will be proposed to you.',
-                ['application_id' => $application->id, 'application_number' => $application->application_number],
-                dedupeKey: 'application-'.$application->id,
+                'Votre demande de crédit a été acceptée',
+                "Votre demande de crédit {$application->application_number} a été acceptée.\n\n"
+                    ."Un rendez-vous a été programmé auprès de votre agence BTS.\n"
+                    .'Agence : '.$appointment->branch->name."\n"
+                    .'Date : '.$appointment->scheduled_date->locale('fr')->isoFormat('dddd D MMMM YYYY')."\n"
+                    .'Heure : '.substr($appointment->scheduled_time, 0, 5)."\n\n"
+                    .'Connectez-vous à votre espace client pour consulter les détails ou modifier votre rendez-vous : '.$portalUrl,
+                [
+                    'application_id' => $application->id,
+                    'application_number' => $application->application_number,
+                    'appointment_id' => $appointment->id,
+                    'branch_id' => $appointment->branch_id,
+                    'scheduled_date' => $appointment->scheduled_date->toDateString(),
+                    'scheduled_time' => $appointment->scheduled_time,
+                    'portal_url' => $portalUrl,
+                ],
+                dedupeKey: 'final-decision-admin-approved-'.$application->id,
             );
+            $this->auditFinalDecisionNotificationQueued($application, $admin, $notification?->id, 'approved', $ip, $userAgent);
 
             return $application->fresh();
         });
@@ -208,35 +229,65 @@ class CreditApplicationReviewService
 
     public function adminReject(CreditApplication $application, StaffUser $admin, string $reason, ?string $ip = null, ?string $userAgent = null): CreditApplication
     {
-        $this->stateMachine->apply(
-            $application,
-            CreditApplication::STATUS_REJECTED,
-            $admin,
-            attributes: ['decided_by_admin_user_id' => $admin->id, 'rejection_reason' => $reason],
-            ip: $ip,
-            userAgent: $userAgent,
-        );
+        return DB::transaction(function () use ($application, $admin, $reason, $ip, $userAgent) {
+            $this->stateMachine->apply(
+                $application,
+                CreditApplication::STATUS_REJECTED,
+                $admin,
+                attributes: ['decided_by_admin_user_id' => $admin->id, 'rejection_reason' => $reason],
+                ip: $ip,
+                userAgent: $userAgent,
+            );
+
+            $this->auditLog->log(
+                'credit_application.admin_rejected',
+                $application->user,
+                previousState: ['status' => CreditApplication::STATUS_STAFF_APPROVED],
+                newState: ['status' => CreditApplication::STATUS_REJECTED, 'reason' => $reason],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $application,
+                staffUser: $admin,
+            );
+
+            $notification = $this->notifications->notifyUser(
+                $application->user,
+                'admin.rejected',
+                'Décision finale concernant votre demande de crédit',
+                "Votre demande de crédit {$application->application_number} n'a pas été acceptée.\n\nConnectez-vous à votre espace client pour consulter le statut de votre dossier.",
+                ['application_id' => $application->id, 'application_number' => $application->application_number],
+                dedupeKey: 'final-decision-admin-rejected-'.$application->id,
+            );
+            $this->auditFinalDecisionNotificationQueued($application, $admin, $notification?->id, 'rejected', $ip, $userAgent);
+
+            return $application->fresh();
+        });
+    }
+
+    private function auditFinalDecisionNotificationQueued(
+        CreditApplication $application,
+        StaffUser $actor,
+        ?int $notificationId,
+        string $decision,
+        ?string $ip,
+        ?string $userAgent,
+    ): void {
+        if ($notificationId === null) {
+            return;
+        }
 
         $this->auditLog->log(
-            'credit_application.admin_rejected',
+            'credit_application.final_decision_notification_queued',
             $application->user,
-            previousState: ['status' => CreditApplication::STATUS_STAFF_APPROVED],
-            newState: ['status' => CreditApplication::STATUS_REJECTED, 'reason' => $reason],
+            newState: [
+                'notification_id' => $notificationId,
+                'decision' => $decision,
+                'channel' => 'email',
+            ],
             ipAddress: $ip,
             userAgent: $userAgent,
             application: $application,
-            staffUser: $admin,
+            staffUser: $actor,
         );
-
-        $this->notifications->notifyUser(
-            $application->user,
-            'admin.rejected',
-            'Application rejected',
-            'Your application '.$application->application_number.' was not approved: '.$reason,
-            ['application_id' => $application->id, 'application_number' => $application->application_number],
-            dedupeKey: 'application-'.$application->id,
-        );
-
-        return $application->fresh();
     }
 }

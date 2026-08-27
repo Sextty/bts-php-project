@@ -15,6 +15,15 @@ use Illuminate\Http\Request;
  */
 class HealthController extends Controller
 {
+    /** Fast liveness probe: it intentionally does not contact any dependency. */
+    public function live(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => ['status' => 'ok'],
+        ]);
+    }
+
     public function __invoke(Request $request, HealthCheckService $health): JsonResponse
     {
         $report = $health->check();

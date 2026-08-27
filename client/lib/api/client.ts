@@ -1,14 +1,7 @@
 import { clearToken, getToken } from '@/lib/auth/token';
 
 export function getApiBaseUrl(): string {
-  if (typeof window !== 'undefined') {
-    const configured = process.env.NEXT_PUBLIC_API_URL;
-    if (configured && !configured.includes('localhost') && !configured.includes('127.0.0.1')) {
-      return configured;
-    }
-    return `${window.location.protocol}//${window.location.hostname}:8000`;
-  }
-  return process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
+  return (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 }
 
 export interface ApiErrorBody {
@@ -34,11 +27,34 @@ export class ApiError extends Error {
   }
 }
 
+function getClientTelemetryHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const headers: Record<string, string> = {};
+  try {
+    if (navigator.platform) headers['X-Client-Platform'] = navigator.platform;
+    if (navigator.hardwareConcurrency) headers['X-Client-CPU-Cores'] = String(navigator.hardwareConcurrency);
+    const navigatorWithMemory = navigator as Navigator & { deviceMemory?: number };
+    if (navigatorWithMemory.deviceMemory) headers['X-Client-RAM'] = `${navigatorWithMemory.deviceMemory} Go`;
+    if (window.screen) headers['X-Client-Screen'] = `${window.screen.width}x${window.screen.height}`;
+    let deviceId = localStorage.getItem('bts_device_fingerprint');
+    if (!deviceId) {
+      deviceId = 'DEV-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+      localStorage.setItem('bts_device_fingerprint', deviceId);
+    }
+    headers['X-Device-Fingerprint'] = deviceId;
+  } catch {}
+  return headers;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; auth?: boolean } = {}
 ): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...getClientTelemetryHeaders(),
+  };
 
   if (options.auth) {
     const token = getToken();
@@ -48,6 +64,7 @@ export async function apiFetch<T>(
   const response = await fetch(`${getApiBaseUrl()}/api${path}`, {
     method: options.method ?? 'GET',
     headers,
+    cache: 'no-store',
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
   });
 
@@ -60,7 +77,10 @@ export async function apiFetch<T>(
  * boundary), so we deliberately don't set one here.
  */
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    ...getClientTelemetryHeaders(),
+  };
 
   const token = getToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -68,6 +88,7 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   const response = await fetch(`${getApiBaseUrl()}/api${path}`, {
     method: 'POST',
     headers,
+    cache: 'no-store',
     body: formData,
   });
 

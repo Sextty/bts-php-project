@@ -49,11 +49,21 @@ class ApplicationCreationTest extends CreditApplicationTestCase
     public function test_index_includes_the_n_demande_once_the_credit_step_is_saved(): void
     {
         $application = $this->newApplication();
-        $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload());
+        $this->completeStep1($application);
+        $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload())->assertOk();
 
         $response = $this->getJson('/api/applications');
 
         $response->assertOk();
         $this->assertNotNull($response->json('data.applications.0.credit_request.n_demande'));
+    }
+
+    public function test_credit_step_cannot_skip_the_client_step(): void
+    {
+        $application = $this->newApplication();
+
+        $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload())
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'STEPS_INCOMPLETE');
     }
 }

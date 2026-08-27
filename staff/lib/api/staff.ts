@@ -2,7 +2,7 @@ import { apiFetch } from '@/lib/api/client';
 import { getStaffToken } from '@/lib/auth/staff-token';
 import type { ApplicationStatus, CreditApplicationDto } from '@/lib/api/credit-applications';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 export interface StaffUserDto {
   id: number;
@@ -43,8 +43,11 @@ export function staffLogout() {
   return apiFetch<null>('/staff/logout', { method: 'POST', auth: 'staff' });
 }
 
-export function listStaffApplications(status?: ApplicationStatus) {
-  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+export function listStaffApplications(status?: ApplicationStatus | readonly ApplicationStatus[]) {
+  const params = new URLSearchParams();
+  const statuses = Array.isArray(status) ? status : status ? [status] : [];
+  statuses.forEach((value) => params.append('status[]', value));
+  const query = params.size > 0 ? `?${params.toString()}` : '';
 
   return apiFetch<{ applications: StaffApplicationDto[]; meta: { current_page: number; last_page: number; total: number } }>(
     `/staff/applications${query}`,

@@ -11,9 +11,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * ShouldBroadcastNow (not ShouldBroadcast): broadcasts synchronously within the request instead
- * of via a queued job, so this works without a queue worker running — QUEUE_CONNECTION here is
- * 'database', and nothing else in this app currently requires `queue:work` to be running.
+ * Queued after commit so WebSocket delivery cannot slow down or roll back report persistence.
  */
 class ReportMessageSent implements ShouldBroadcastNow
 {

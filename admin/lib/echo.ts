@@ -3,7 +3,7 @@ import Pusher, { type AuthorizerCallback } from 'pusher-js';
 
 type ChannelAuthorizationData = NonNullable<Parameters<AuthorizerCallback>[1]>;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '');
 
 /**
  * One Echo client per token, so a customer channel subscription and a staff channel subscription

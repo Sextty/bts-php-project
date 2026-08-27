@@ -9,6 +9,7 @@ import { GoogleSignInButton } from '@/components/google-sign-in-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ArrowRight, LockKeyhole, Mail, Phone, UserRound } from 'lucide-react';
 import { register } from '@/lib/api/auth';
 import { ApiError } from '@/lib/api/client';
 import { setPreAuthToken } from '@/lib/auth/pre-auth-token';
@@ -33,7 +34,7 @@ export default function RegisterPage() {
     setErrorFields(null);
 
     if (form.password !== form.password_confirmation) {
-      setError('The passwords do not match.');
+      setError('Les mots de passe ne correspondent pas.');
       return;
     }
 
@@ -48,7 +49,7 @@ export default function RegisterPage() {
         setError(err.message);
         setErrorFields(err.fields ?? null);
       } else {
-        setError('Something went wrong. Please try again.');
+        setError('Une erreur est survenue. Veuillez réessayer.');
       }
     } finally {
       setSubmitting(false);
@@ -56,90 +57,47 @@ export default function RegisterPage() {
   }
 
   return (
-    <AuthCard title="Create an account" description="We'll send a verification code to your email or phone once you submit.">
+    <AuthCard title="Créer votre espace" description="Quelques informations suffisent pour démarrer votre demande de financement.">
       <ErrorAlert message={error} fields={errorFields} />
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="first_name">First name</Label>
-            <Input
-              id="first_name"
-              required
-              autoComplete="given-name"
-              value={form.first_name}
-              onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-            />
+            <Label htmlFor="first_name" className="text-sm font-semibold text-[#1e2d3d]">Prénom</Label>
+            <div className="relative"><UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#6a7a8b]" aria-hidden="true" /><Input id="first_name" required autoComplete="given-name" className="h-11 border-[#d7dfe7] pl-10 shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} /></div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="last_name">Last name</Label>
-            <Input
-              id="last_name"
-              required
-              autoComplete="family-name"
-              value={form.last_name}
-              onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-            />
+            <Label htmlFor="last_name" className="text-sm font-semibold text-[#1e2d3d]">Nom</Label>
+            <Input id="last_name" required autoComplete="family-name" className="h-11 border-[#d7dfe7] shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
           </div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            required
-            autoComplete="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
+          <Label htmlFor="email" className="text-sm font-semibold text-[#1e2d3d]">Adresse e-mail</Label>
+          <div className="relative"><Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#6a7a8b]" aria-hidden="true" /><Input id="email" type="email" required autoComplete="email" className="h-11 border-[#d7dfe7] pl-10 shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="phone">Phone number</Label>
-          <Input
-            id="phone"
-            type="tel"
-            placeholder="+21620000000"
-            required
-            autoComplete="tel"
-            value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          />
+          <Label htmlFor="phone" className="text-sm font-semibold text-[#1e2d3d]">Téléphone</Label>
+          <div className="relative"><Phone className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#6a7a8b]" aria-hidden="true" /><Input id="phone" type="tel" placeholder="+216 20 000 000" required autoComplete="tel" className="h-11 border-[#d7dfe7] pl-10 shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            required
-            minLength={10}
-            autoComplete="new-password"
-            aria-describedby="password-hint"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
+          <Label htmlFor="password" className="text-sm font-semibold text-[#1e2d3d]">Mot de passe</Label>
+          <div className="relative"><LockKeyhole className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#6a7a8b]" aria-hidden="true" /><Input id="password" type="password" required minLength={10} autoComplete="new-password" aria-describedby="password-hint" className="h-11 border-[#d7dfe7] pl-10 shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
           <p id="password-hint" className="text-xs text-muted-foreground">
-            Use at least 10 characters.
+            Utilisez au moins 10 caractères.
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password_confirmation">Confirm password</Label>
-          <Input
-            id="password_confirmation"
-            type="password"
-            required
-            autoComplete="new-password"
-            value={form.password_confirmation}
-            onChange={(e) => setForm({ ...form, password_confirmation: e.target.value })}
-          />
+          <Label htmlFor="password_confirmation" className="text-sm font-semibold text-[#1e2d3d]">Confirmer le mot de passe</Label>
+          <Input id="password_confirmation" type="password" required autoComplete="new-password" className="h-11 border-[#d7dfe7] shadow-sm focus-visible:border-[#c0272d] focus-visible:ring-[#c0272d]/20" value={form.password_confirmation} onChange={(e) => setForm({ ...form, password_confirmation: e.target.value })} />
         </div>
-        <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? 'Creating account…' : 'Create account'}
+        <Button type="submit" className="h-11 w-full bg-[#c0272d] text-sm font-semibold hover:bg-[#9e1f24]" disabled={submitting}>
+          {submitting ? 'Création en cours…' : <>Créer mon compte <ArrowRight className="size-4" aria-hidden="true" /></>}
         </Button>
       </form>
       <GoogleSignInButton />
-      <p className="mt-4 text-center text-sm text-muted-foreground">
-        Already have an account?{' '}
-        <Link href="/login" className="font-medium text-primary underline">
-          Log in
+      <p className="mt-6 text-center text-sm text-[#536579]">
+        Vous avez déjà un compte ?{' '}
+        <Link href="/login" className="font-semibold text-[#a82027] underline-offset-4 hover:underline">
+          Se connecter
         </Link>
       </p>
     </AuthCard>

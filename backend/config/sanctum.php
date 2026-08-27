@@ -50,7 +50,10 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Banking APIs must not issue bearer tokens that remain valid forever.
+    // Clients re-authenticate after this bounded idle-safe lifetime; the value
+    // is intentionally environment-configurable for managed deployments.
+    'expiration' => (int) env('SANCTUM_TOKEN_EXPIRATION', 60),
 
     /*
     |--------------------------------------------------------------------------
@@ -65,7 +68,7 @@ return [
     |
     */
 
-    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
+    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', 'bts_'),
 
     /*
     |--------------------------------------------------------------------------

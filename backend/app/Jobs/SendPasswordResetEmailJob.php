@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\User;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -19,7 +20,7 @@ use Illuminate\Support\Facades\Log;
  * development. In production, setting the flag to true moves the SMTP round-trip off
  * the request that triggers the reset-link send.
  */
-class SendPasswordResetEmailJob implements ShouldQueue
+class SendPasswordResetEmailJob implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 
@@ -59,7 +60,7 @@ class SendPasswordResetEmailJob implements ShouldQueue
     {
         Log::error('[password-reset:queue] email job failed', [
             'user_id' => $this->user->id,
-            'exception' => $e->getMessage(),
+            'exception_class' => $e::class,
         ]);
     }
 }

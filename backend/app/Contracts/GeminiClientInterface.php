@@ -2,6 +2,10 @@
 
 namespace App\Contracts;
 
+use App\Exceptions\Gemini\GeminiApiException;
+use App\Exceptions\Gemini\GeminiConfigurationException;
+use App\Exceptions\Gemini\GeminiMalformedResponseException;
+
 /**
  * Isolated transport layer for the Gemini (generativelanguage) API. The only class in the app
  * that knows about the wire format — headers, URL, retries, timeouts, rate limits. Callers
@@ -14,14 +18,19 @@ namespace App\Contracts;
  *   - retry transient failures (429, 5xx, network) with bounded exponential backoff;
  *   - never log the prompt or the file contents.
  */
-interface GeminiClientInterface
+interface GeminiClientInterface extends DocumentAiClientInterface
 {
     /**
      * @return array<string, mixed> The decoded JSON object from the model's message text.
      *
-     * @throws \App\Exceptions\Gemini\GeminiConfigurationException
-     * @throws \App\Exceptions\Gemini\GeminiApiException
-     * @throws \App\Exceptions\Gemini\GeminiMalformedResponseException
+     * @throws GeminiConfigurationException
+     * @throws GeminiApiException
+     * @throws GeminiMalformedResponseException
      */
-    public function generateContent(string $mimeType, string $base64Contents, string $prompt): array;
+    public function generateContent(
+        string $mimeType,
+        string $base64Contents,
+        string $prompt,
+        ?int $timeBudgetSeconds = null,
+    ): array;
 }

@@ -37,68 +37,56 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<DashboardData | null>(null);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(async (showLoading = false) => {
     const token = getToken();
     if (!token) {
       router.replace('/login');
       return;
     }
+    if (showLoading) setLoading(true);
+    const [userResult, appsResult, notifsResult] = await Promise.allSettled([
+      getCurrentUser(),
+      listApplications(),
+      getNotifications(),
+    ]);
 
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [userResult, appsResult, notifsResult] = await Promise.allSettled([
-          getCurrentUser(),
-          listApplications(),
-          getNotifications(),
-        ]);
-
-        if (cancelled) return;
-
-        if (userResult.status === 'rejected') {
-          clearToken();
-          router.replace('/login');
-          return;
-        }
-
-        const rawApps = appsResult.status === 'fulfilled' ? appsResult.value : undefined;
-        const rawNotifs = notifsResult.status === 'fulfilled' ? notifsResult.value : undefined;
-
-        const resolvedApps: CreditApplicationDto[] =
-          Array.isArray(rawApps) ? rawApps as CreditApplicationDto[]
-          : (rawApps && typeof rawApps === 'object' && Array.isArray((rawApps as Record<string, unknown>).applications))
-            ? (rawApps as unknown as { applications: CreditApplicationDto[] }).applications
-            : [];
-
-        const resolvedNotifs: NotificationDto[] =
-          Array.isArray(rawNotifs) ? rawNotifs
-          : (rawNotifs && typeof rawNotifs === 'object' && Array.isArray((rawNotifs as Record<string, unknown>).notifications))
-            ? (rawNotifs as unknown as { notifications: NotificationDto[] }).notifications
-            : [];
-
-        setData({
-          user: userResult.value.user,
-          applications: resolvedApps,
-          notifications: resolvedNotifs,
-        });
-        setLoading(false);
-      } catch {
-        if (!cancelled) {
-          clearToken();
-          router.replace('/login');
-        }
-      }
+    if (userResult.status === 'rejected') {
+      clearToken();
+      router.replace('/login');
+      return;
     }
 
-    load();
-    return () => { cancelled = true; };
+    const rawApps = appsResult.status === 'fulfilled' ? appsResult.value : undefined;
+    const rawNotifs = notifsResult.status === 'fulfilled' ? notifsResult.value : undefined;
+    const resolvedApps: CreditApplicationDto[] =
+      Array.isArray(rawApps) ? rawApps as CreditApplicationDto[]
+      : (rawApps && typeof rawApps === 'object' && Array.isArray((rawApps as Record<string, unknown>).applications))
+        ? (rawApps as unknown as { applications: CreditApplicationDto[] }).applications
+        : [];
+    const resolvedNotifs: NotificationDto[] =
+      Array.isArray(rawNotifs) ? rawNotifs
+      : (rawNotifs && typeof rawNotifs === 'object' && Array.isArray((rawNotifs as Record<string, unknown>).notifications))
+        ? (rawNotifs as unknown as { notifications: NotificationDto[] }).notifications
+        : [];
+
+    setData({ user: userResult.value.user, applications: resolvedApps, notifications: resolvedNotifs });
+    setLoading(false);
   }, [router]);
 
-  const handleLogout = useCallback(() => {
-    clearToken();
-    router.replace('/login');
-  }, [router]);
+  useEffect(() => {
+    queueMicrotask(() => void loadDashboard(true));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void loadDashboard();
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [loadDashboard]);
 
   const handleMarkRead = useCallback(
     async (notifId: number) => {
@@ -132,14 +120,13 @@ export default function DashboardPage() {
   const safeNotifications: NotificationDto[] = Array.isArray(notifications) ? notifications : [];
   const safeApplications: CreditApplicationDto[] = Array.isArray(applications) ? applications : [];
   const displayName = user.first_name || user.email.split('@')[0];
-  const initials = (user.first_name?.[0] || user.email[0] || 'U').toUpperCase();
   const lockedApp = safeApplications.find(
     (a) => a.status === 'APPOINTMENT_LOCKED'
   );
   const unreadCount = safeNotifications.filter((n) => !n.read_at).length;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader
         user={user}
         applicationsCount={safeApplications.length}

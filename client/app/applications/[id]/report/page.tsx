@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AlertCircle, XCircle, MessageSquare, Shield } from 'lucide-react';
+import { AlertCircle, XCircle } from 'lucide-react';
 import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
@@ -51,7 +51,7 @@ export default function ApplicationReportPage() {
   const applicationNumber = application?.credit_request?.n_demande ?? `Dossier #${applicationId}`;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />

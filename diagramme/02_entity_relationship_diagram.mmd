@@ -1,270 +1,210 @@
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#1565C0',
-    'primaryTextColor': '#FFFFFF',
-    'primaryBorderColor': '#0D47A1',
-    'lineColor': '#1E3A8A',
-    'secondaryColor': '#E3F2FD',
-    'tertiaryColor': '#BBDEFB',
-    'attributeBackgroundColorOdd': '#F8FAFC',
-    'attributeBackgroundColorEven': '#FFFFFF',
-    'fontFamily': 'Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
-    'fontSize': '13px'
-  }
-}}%%
-
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'13px','primaryColor':'#E0F2FE','primaryTextColor':'#0F172A','primaryBorderColor':'#0369A1','lineColor':'#475569'}}}%%
 erDiagram
-    %% =========================================================================
-    %% BTS BANK - COMPREHENSIVE ENTITY RELATIONSHIP DIAGRAM (ERD)
-    %% Relational Data Model for Digital Credit Platform & AI Verification
-    %% =========================================================================
+    USERS ||--o{ OTP_CODES : "recoit"
+    USERS ||--o{ CREDIT_APPLICATIONS : "depose"
+    USERS ||--o{ BANK_ACCOUNTS : "detient"
+    USERS ||--o{ AUDIT_LOGS : "declenche"
+    USERS ||--o{ REPORT_MESSAGES : "ecrit"
 
-    %% -------------------------------------------------------------------------
-    %% 1. USER & AUTHENTICATION RELATIONSHIPS
-    %% -------------------------------------------------------------------------
-    USERS ||--o{ OTP_CODES : "authenticates_via"
-    USERS ||--o{ APP_NOTIFICATIONS : "receives"
-    USERS ||--o{ AUDIT_LOGS : "triggers_activity"
-    USERS ||--o{ REPORT_MESSAGES : "sends_client_message"
-    USERS ||--o{ CREDIT_APPLICATIONS : "submits"
+    BRANCHES ||--o{ STAFF_USERS : "affecte"
+    BRANCHES ||--o{ CREDIT_APPLICATIONS : "traite"
+    BRANCHES ||--o{ APPOINTMENTS : "accueille"
+    BRANCHES ||--o{ BANK_ACCOUNTS : "domicilie"
 
-    %% -------------------------------------------------------------------------
-    %% 2. BRANCH & STAFF GOVERNANCE RELATIONSHIPS
-    %% -------------------------------------------------------------------------
-    BRANCHES ||--o{ STAFF_USERS : "employs_staff"
-    BRANCHES ||--o{ CREDIT_APPLICATIONS : "manages_dossiers"
-    BRANCHES ||--o{ APPOINTMENTS : "hosts_sessions"
-    STAFF_USERS ||--o{ AUDIT_LOGS : "performs_staff_action"
-    STAFF_USERS ||--o{ REPORT_MESSAGES : "replies_to_chat"
-    STAFF_USERS ||--o{ CREDIT_APPLICATIONS : "reviews_and_decides"
+    CREDIT_APPLICATIONS ||--o| CLIENTS : "profil"
+    CREDIT_APPLICATIONS ||--o| CREDIT_REQUESTS : "besoin"
+    CREDIT_APPLICATIONS ||--o| PROJECTS : "projet"
+    CREDIT_APPLICATIONS ||--o{ DOCUMENTS : "contient"
+    CREDIT_APPLICATIONS ||--o{ VALIDATION_STEPS : "valide"
+    CREDIT_APPLICATIONS ||--o{ APPOINTMENTS : "planifie"
+    CREDIT_APPLICATIONS ||--o{ REPORT_MESSAGES : "conversation"
+    CREDIT_APPLICATIONS ||--o{ AUDIT_LOGS : "trace"
 
-    %% -------------------------------------------------------------------------
-    %% 3. CREDIT DOSSIER CORE RELATIONSHIPS
-    %% -------------------------------------------------------------------------
-    CREDIT_APPLICATIONS ||--|| CLIENTS : "identifies_borrower"
-    CREDIT_APPLICATIONS ||--|| CREDIT_REQUESTS : "specifies_terms"
-    CREDIT_APPLICATIONS ||--|| PROJECTS : "funds_investment"
-    CREDIT_APPLICATIONS ||--o{ DOCUMENTS : "contains_evidences"
-    CREDIT_APPLICATIONS ||--o{ VALIDATION_STEPS : "tracks_milestones"
-    CREDIT_APPLICATIONS ||--o{ APPOINTMENTS : "schedules_rdv"
-    CREDIT_APPLICATIONS ||--o{ REPORT_MESSAGES : "contains_thread"
-    CREDIT_APPLICATIONS ||--o{ AUDIT_LOGS : "logs_history"
-    APPLICATION_NUMBER_COUNTERS ||..o{ CREDIT_APPLICATIONS : "generates_app_number"
+    APP_NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "diffuse"
+    BANK_ACCOUNTS ||--o{ LEDGER_ENTRIES : "mouvemente"
+    LEDGER_TRANSACTIONS ||--|{ LEDGER_ENTRIES : "compose"
+    BANKING_TRANSFER_REQUESTS o|--o| LEDGER_TRANSACTIONS : "valide_en"
+    BANK_ACCOUNTS ||--o{ BANKING_TRANSFER_REQUESTS : "source"
+    BANK_ACCOUNTS ||--o{ BANKING_TRANSFER_REQUESTS : "destination"
+    ASYNC_OUTBOX_EVENTS }o..|| APP_NOTIFICATIONS : "achemine"
+    ASYNC_OUTBOX_EVENTS }o..|| REPORT_MESSAGES : "diffuse"
 
-    %% =========================================================================
-    %% ENTITY DEFINITIONS & ATTRIBUTE SPECIFICATIONS
-    %% =========================================================================
-
-    %% -------------------------------------------------------------------------
-    %% DOMAIN 1: AUTHENTICATION, IDENTITY & NOTIFICATIONS
-    %% -------------------------------------------------------------------------
     USERS {
-        bigint id PK "Auto-increment ID"
-        string email "Unique client email"
-        string phone "Client phone number"
-        string password "Bcrypt hashed password"
-        string first_name "Client first name"
-        string last_name "Client last name"
-        string google_id "Google OAuth UID (nullable)"
-        timestamp email_verified_at "Email confirmation timestamp"
-        boolean is_banned "Account ban flag"
-        string ban_reason "Administrative ban motive"
-        timestamp created_at "Registration date"
-        timestamp updated_at "Profile last modified"
+        bigint id PK
+        string email UK
+        string phone UK
+        string auth_provider
+        string status
+        datetime phone_verified_at
+        datetime banned_at
     }
-
-    OTP_CODES {
-        bigint id PK "Auto-increment ID"
-        string identifier "Email or Phone target"
-        string code "Hashed 6-digit OTP code"
-        string purpose "REGISTER | LOGIN | RESET"
-        timestamp expires_at "Expiration deadline (10m)"
-        boolean is_used "Single-use redemption flag"
-    }
-
-    APP_NOTIFICATIONS {
-        bigint id PK "Auto-increment ID"
-        bigint user_id FK "Recipient User reference"
-        string type "SYSTEM | STATUS_UPDATE | APPOINTMENT | CHAT"
-        string title "Notification header"
-        text body "Notification descriptive content"
-        boolean is_read "Read receipt indicator"
-        timestamp created_at "Dispatch timestamp"
-    }
-
-    %% -------------------------------------------------------------------------
-    %% DOMAIN 2: BRANCH NETWORK & STAFF GOVERNANCE
-    %% -------------------------------------------------------------------------
-    BRANCHES {
-        bigint id PK "Auto-increment ID"
-        string code UK "Unique branch code (e.g. AG01)"
-        string name "Agency official designation"
-        string governorate "Tunisian Governorate location"
-        string address "Full physical postal address"
-        string phone "Agency landline contact"
-        string fax "Agency fax transmission line"
-        string opening_hours "Operational schedule (e.g. 08h-16h)"
-        decimal latitude "GPS Latitude coordinates"
-        decimal longitude "GPS Longitude coordinates"
-    }
-
     STAFF_USERS {
-        bigint id PK "Auto-increment ID"
-        bigint branch_id FK "Assigned Agency reference"
-        string email "Official staff corporate email"
-        string password "Bcrypt hashed credentials"
-        string first_name "Staff member first name"
-        string last_name "Staff member last name"
-        string role "staff | admin (L1 Reviewer vs Central Admin)"
-        boolean is_active "Staff authorization status"
-        timestamp created_at "Account provisioning date"
-        timestamp updated_at "Account last modified"
+        bigint id PK
+        bigint branch_id FK
+        string email UK
+        string role
+        string status
     }
-
-    %% -------------------------------------------------------------------------
-    %% DOMAIN 3: CREDIT APPLICATION DOSSIER CORE
-    %% -------------------------------------------------------------------------
+    BRANCHES {
+        bigint id PK
+        string name
+        string ville
+        string delegation
+        decimal latitude
+        decimal longitude
+        int daily_capacity
+    }
     CREDIT_APPLICATIONS {
-        bigint id PK "Auto-increment ID"
-        bigint user_id FK "Owner User reference"
-        bigint branch_id FK "Assigned Agency reference"
-        string application_number UK "Formal reference (BTS-YYYYMM-XXXX)"
-        string status "DRAFT | SUBMITTED | STAFF_APPROVED | ADMIN_APPROVED | REJECTED"
-        boolean is_locked "Read-only dossier lock"
-        string review_notes "Internal review notes"
-        timestamp staff_reviewed_at "L1 staff decision timestamp"
-        bigint staff_reviewed_by FK "L1 Reviewer Staff ID"
-        timestamp admin_reviewed_at "L2 admin decision timestamp"
-        bigint admin_reviewed_by FK "L2 Admin Decision Maker ID"
-        string rejection_reason "Formal rejection explanation"
-        boolean is_closed "Archival / closed state"
-        timestamp created_at "Application creation date"
-        timestamp updated_at "Application last status update"
+        bigint id PK
+        bigint user_id FK
+        bigint branch_id FK
+        string status
+        datetime submitted_at
+        bigint decided_by_staff_user_id FK
+        bigint decided_by_admin_user_id FK
+        datetime report_closed_at
     }
-
-    APPLICATION_NUMBER_COUNTERS {
-        bigint id PK "Auto-increment ID"
-        string type "Counter sequence type (CREDIT)"
-        int current_number "Latest issued incremental sequence"
-        int year "Annual cycle partition year"
-    }
-
-    VALIDATION_STEPS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        string step_name "STEP_1_CLIENT | STEP_2_CREDIT | STEP_3_PROJECT | STEP_4_DOCS"
-        boolean is_completed "Wizard step validation flag"
-        timestamp completed_at "Step completion timestamp"
-    }
-
-    %% -------------------------------------------------------------------------
-    %% DOMAIN 4: APPLICATION STEP DETAILS (CLIENT, CREDIT, PROJECT, DOCUMENTS)
-    %% -------------------------------------------------------------------------
     CLIENTS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        string full_name "Full legal client name"
-        string cin_number "Tunisian National ID (8 digits)"
-        date date_of_birth "Borrower birth date"
-        string gender "MALE | FEMALE"
-        string marital_status "SINGLE | MARRIED | DIVORCED | WIDOWED"
-        string phone "Primary direct phone number"
-        string address "Residential street address"
-        string governorate "Residential Governorate"
-        timestamp created_at "Step record timestamp"
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string code_client
+        string numero_pid
+        date date_naissance
+        string profession
     }
-
     CREDIT_REQUESTS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        decimal requested_amount "Financing amount requested (TND)"
-        string credit_type "EQUIPMENT | WORKING_CAPITAL | STARTUP | EXPANSION"
-        int duration_months "Repayment term length (months)"
-        string repayment_frequency "MONTHLY | QUARTERLY | SEMESTER | ANNUAL"
-        timestamp created_at "Step record timestamp"
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string n_demande UK
+        string type_demande
+        decimal montant_global_sollicite
+        decimal montant_eqp
+        decimal montant_fdr
+        decimal montant_amg
+        decimal montant_chp
     }
-
     PROJECTS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        string title "Project or business title"
-        text description "Executive business summary"
-        string sector "AGRICULTURE | INDUSTRY | SERVICES | CRAFTS | IT"
-        decimal total_investment "Total project cost estimation (TND)"
-        decimal own_contribution "Self-financed equity contribution (TND)"
-        string address "Project execution location address"
-        decimal latitude "Project site GPS Latitude"
-        decimal longitude "Project site GPS Longitude"
-        timestamp created_at "Step record timestamp"
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string code_projet
+        string type_projet
+        string activite
+        decimal cout
+        decimal latitude
+        decimal longitude
     }
-
     DOCUMENTS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        string document_type "CIN | INVOICE | BUSINESS_PLAN | TAX_STATUS"
-        string file_name "Original uploaded file name"
-        string disk_path "Secure storage disk relative path"
-        string mime_type "File MIME type (PDF, JPEG, PNG)"
-        int file_size "File payload size in bytes"
-        boolean ai_is_valid "Gemini OCR validation status"
-        decimal ai_confidence "Gemini OCR confidence score (0.00-1.00)"
-        json ai_extracted_data "Structured extracted metadata payload"
-        text ai_feedback "Automated AI feedback commentary"
-        timestamp created_at "Upload timestamp"
+        bigint id PK
+        bigint credit_application_id FK
+        string document_type
+        string disk_path UK
+        string mime_type
+        int size_bytes
+        string malware_scan_status
+        boolean ai_is_valid
+        string ai_confidence
     }
-
-    %% -------------------------------------------------------------------------
-    %% DOMAIN 5: OPERATIONS, APPOINTMENTS, MESSAGING & AUDIT
-    %% -------------------------------------------------------------------------
+    VALIDATION_STEPS {
+        bigint id PK
+        bigint credit_application_id FK
+        string step
+        string status
+        json errors
+    }
     APPOINTMENTS {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        bigint branch_id FK "Physical Agency Venue ID"
-        datetime appointment_date "Scheduled interview date and time"
-        string status "PROPOSED | CONFIRMED | CANCELLED | COMPLETED"
-        boolean is_auto_scheduled_future "Auto-scheduling trigger flag"
-        text notes "Interview agenda / staff debrief notes"
-        timestamp created_at "Appointment booking timestamp"
+        bigint id PK
+        bigint credit_application_id FK
+        bigint branch_id FK
+        int attempt_number UK
+        date scheduled_date
+        time scheduled_time
+        string status
     }
-
     REPORT_MESSAGES {
-        bigint id PK "Auto-increment ID"
-        bigint credit_application_id FK "Associated Application ID"
-        string sender_type "user | staff (Message author role)"
-        bigint sender_id "Polymorphic author ID"
-        text message "Chat / dossier inquiry message body"
-        string attachment_path "Optional file attachment path"
-        boolean is_read "Read receipt indicator"
-        timestamp created_at "Message timestamp"
+        bigint id PK
+        bigint credit_application_id FK
+        string sender_type
+        bigint user_id FK
+        bigint staff_user_id FK
+        text body
+        string attachment_path
+        string malware_scan_status
     }
-
+    APP_NOTIFICATIONS {
+        bigint id PK
+        string notifiable_type
+        bigint notifiable_id
+        string type
+        string dedupe_key UK
+        datetime read_at
+    }
+    NOTIFICATION_DELIVERIES {
+        bigint id PK
+        bigint app_notification_id FK
+        string channel UK
+        string status
+        int attempts
+    }
     AUDIT_LOGS {
-        bigint id PK "Auto-increment ID"
-        bigint user_id FK "Optional Client Actor ID"
-        bigint staff_user_id FK "Optional Staff Actor ID"
-        bigint credit_application_id FK "Optional Dossier reference"
-        string action "Event action name"
-        string ip_address "Origin IPv4/IPv6 address"
-        string user_agent "Client browser / device user agent"
-        json old_values "Pre-mutation JSON state"
-        json new_values "Post-mutation JSON state"
-        timestamp created_at "Immutable log timestamp"
+        bigint id PK
+        bigint user_id FK
+        bigint staff_user_id FK
+        bigint credit_application_id FK
+        string action
+        string previous_hash
+        string integrity_hash UK
+        string key_version
     }
-
-    %% -------------------------------------------------------------------------
-    %% STYLING CLASSES (Domain Color Palettes)
-    %% -------------------------------------------------------------------------
-    classDef authEntity fill:#1E40AF,stroke:#172554,stroke-width:2px,color:#FFFFFF;
-    classDef staffEntity fill:#6B21A8,stroke:#3B0764,stroke-width:2px,color:#FFFFFF;
-    classDef coreEntity fill:#1565C0,stroke:#0D47A1,stroke-width:2px,color:#FFFFFF;
-    classDef dossierEntity fill:#0D9488,stroke:#115E59,stroke-width:2px,color:#FFFFFF;
-    classDef opsEntity fill:#D97706,stroke:#78350F,stroke-width:2px,color:#FFFFFF;
-    classDef auditEntity fill:#475569,stroke:#1E293B,stroke-width:2px,color:#FFFFFF;
-
-    class USERS,OTP_CODES,APP_NOTIFICATIONS authEntity;
-    class BRANCHES,STAFF_USERS staffEntity;
-    class CREDIT_APPLICATIONS,APPLICATION_NUMBER_COUNTERS coreEntity;
-    class CLIENTS,CREDIT_REQUESTS,PROJECTS,DOCUMENTS,VALIDATION_STEPS dossierEntity;
-    class APPOINTMENTS,REPORT_MESSAGES opsEntity;
-    class AUDIT_LOGS auditEntity;
+    BANK_ACCOUNTS {
+        bigint id PK
+        bigint user_id FK
+        bigint branch_id FK
+        string account_number UK
+        string currency
+        string normal_side
+        string status
+    }
+    LEDGER_TRANSACTIONS {
+        bigint id PK
+        string reference UK
+        string idempotency_key UK
+        string transaction_type
+        string status
+        datetime posted_at
+    }
+    LEDGER_ENTRIES {
+        bigint id PK
+        bigint ledger_transaction_id FK
+        bigint bank_account_id FK
+        int sequence UK
+        string direction
+        bigint amount_millimes
+    }
+    BANKING_TRANSFER_REQUESTS {
+        bigint id PK
+        string reference UK
+        bigint source_account_id FK
+        bigint destination_account_id FK
+        bigint amount_millimes
+        string status
+        bigint ledger_transaction_id FK,UK
+    }
+    ASYNC_OUTBOX_EVENTS {
+        bigint id PK
+        string type
+        string aggregate_type
+        bigint aggregate_id
+        string dedupe_key UK
+        string status
+        int attempts
+    }
+    OTP_CODES {
+        bigint id PK
+        bigint user_id FK
+        string code_hash
+        string purpose
+        string channel
+        datetime expires_at
+        datetime consumed_at
+        int attempt_count
+    }

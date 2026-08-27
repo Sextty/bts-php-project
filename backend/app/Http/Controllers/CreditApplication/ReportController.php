@@ -10,24 +10,42 @@ use App\Http\Resources\ReportMessageResource;
 use App\Http\Responses\ApiResponse;
 use App\Models\CreditApplication;
 use App\Models\ReportMessage;
+use App\Services\DocumentSecurity\ReportAttachmentService;
 use App\Services\NotificationService;
 use App\Services\ReportMessageBroadcastService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
     public function __construct(
         private readonly ReportMessageBroadcastService $broadcast,
         private readonly NotificationService $notifications,
+        private readonly ReportAttachmentService $attachments,
     ) {}
 
-    public function index(CreditApplication $application): JsonResponse
+    public function index(Request $request, CreditApplication $application): JsonResponse
     {
         $this->authorize('view', $application);
         $this->assertReportOpen($application);
 
+        $limit = max(1, min((int) $request->query('limit', 100), 200));
+        $query = $application->reportMessages()->with(['user', 'staffUser'])->latest('id');
+        if ($request->filled('before_id')) {
+            $query->where('id', '<', max(1, (int) $request->query('before_id')));
+        }
+        $messages = $query->limit($limit + 1)->get();
+        $hasMore = $messages->count() > $limit;
+        $messages = $messages->take($limit);
+
         return ApiResponse::ok([
-            'messages' => ReportMessageResource::collection($application->reportMessages),
+            'messages' => ReportMessageResource::collection($messages->reverse()->values()),
+            'meta' => [
+                'has_more' => $hasMore,
+                'next_before_id' => $hasMore ? $messages->last()?->id : null,
+                'limit' => $limit,
+            ],
             'is_closed' => $application->isReportClosed(),
             'closed_at' => $application->report_closed_at,
             'closed_reason' => $application->report_closed_reason,
@@ -47,25 +65,15 @@ class ReportController extends Controller
             );
         }
 
-        $latestMessage = $application->reportMessages()->latest('id')->first();
-        if ($latestMessage && $latestMessage->sender_type === ReportMessage::SENDER_CUSTOMER) {
-            throw new ApiException(
-                ApiErrorCode::RateLimited,
-                'Vous avez déjà envoyé un message. Veuillez attendre la réponse du conseiller pour envoyer un nouveau message.',
-                status: 422
-            );
-        }
-
         $attachmentData = [];
         if ($request->hasFile('file')) {
-            $file = $request->file('file');
-            $path = $file->store("report_attachments/application-{$application->id}", 'local');
-            $attachmentData = [
-                'attachment_path' => $path,
-                'attachment_name' => $file->getClientOriginalName(),
-                'attachment_type' => $file->getMimeType(),
-                'attachment_size' => $file->getSize(),
-            ];
+            $attachmentData = $this->attachments->store(
+                $application,
+                $request->file('file'),
+                $request->user(),
+                $request->ip(),
+                $request->userAgent(),
+            );
         }
 
         $bodyText = $request->string('body')->toString();
@@ -75,20 +83,52 @@ class ReportController extends Controller
                 : '📎 Pièce jointe';
         }
 
-        $message = $application->reportMessages()->create(array_merge([
-            'sender_type' => ReportMessage::SENDER_CUSTOMER,
-            'user_id' => $request->user()->id,
-            'body' => $bodyText,
-        ], $attachmentData));
+        try {
+            $message = DB::transaction(function () use ($application, $request, $bodyText, $attachmentData) {
+                CreditApplication::query()
+                    ->whereKey($application->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-        $this->broadcast->send($message);
+                $latestMessage = ReportMessage::query()
+                    ->where('credit_application_id', $application->id)
+                    ->latest('id')
+                    ->first();
+                if ($latestMessage?->sender_type === ReportMessage::SENDER_CUSTOMER) {
+                    throw new ApiException(
+                        ApiErrorCode::RateLimited,
+                        'Vous avez déjà envoyé un message. Veuillez attendre la réponse du conseiller pour envoyer un nouveau message.',
+                        status: 422
+                    );
+                }
 
-        $this->notifications->notifyStaff(
-            'report.message',
-            'New message on '.$application->application_number,
-            'The customer wrote a new message on application '.$application->application_number.'.',
-            ['application_id' => $application->id, 'application_number' => $application->application_number],
-        );
+                $message = $application->reportMessages()->create(array_merge([
+                    'sender_type' => ReportMessage::SENDER_CUSTOMER,
+                    'user_id' => $request->user()->id,
+                    'body' => $bodyText,
+                ], $attachmentData));
+
+                $this->broadcast->send($message);
+
+                $this->notifications->queueStaffAudience(
+                    $message,
+                    'report.message',
+                    'New message on '.$application->application_number,
+                    'The customer wrote a new message on application '.$application->application_number.'.',
+                    [
+                        'application_id' => $application->id,
+                        'application_number' => $application->application_number,
+                        'branch_id' => $application->branch_id,
+                    ],
+                    dedupeKey: 'report-message-'.$message->id,
+                );
+
+                return $message;
+            });
+        } catch (\Throwable $exception) {
+            $this->attachments->deleteStored($attachmentData);
+            throw $exception;
+        }
 
         return ApiResponse::created(['message' => new ReportMessageResource($message)]);
     }
@@ -97,26 +137,10 @@ class ReportController extends Controller
     {
         $this->authorize('view', $application);
 
-        if ($message->credit_application_id !== $application->id || ! $message->attachment_path) {
-            throw new ApiException(ApiErrorCode::NotFound, 'Pièce jointe introuvable.');
-        }
-
-        if (! \Illuminate\Support\Facades\Storage::disk('local')->exists($message->attachment_path)) {
-            throw new ApiException(ApiErrorCode::NotFound, 'Fichier introuvable sur le serveur.');
-        }
-
-        $safeFilename = basename(preg_replace('/[^\w.\-\s]/u', '_', $message->attachment_name ?? 'piece_jointe'));
-
-        return \Illuminate\Support\Facades\Storage::disk('local')->download(
-            $message->attachment_path,
-            $safeFilename
-        );
+        return $this->attachments->response($application, $message);
     }
 
-    /**
-     * The report opens only once the application has been locked after 3 rejections — before
-     * that, there's nothing to report and no thread for the customer to write into.
-     */
+    /** The appointment-escalation report opens after four successful customer reschedules. */
     private function assertReportOpen(CreditApplication $application): void
     {
         if (! $application->isReportOpen()) {

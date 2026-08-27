@@ -37,6 +37,7 @@ import {
   closeStaffReport,
   reopenStaffReport,
   banClientFromApplication,
+  downloadReportAttachment,
   type ReportMessageDto,
   type BranchDto,
 } from '@/lib/api/reports';
@@ -48,11 +49,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ApiError, getApiBaseUrl } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import { getStaffToken } from '@/lib/auth/staff-token';
 import { createEchoClient } from '@/lib/echo';
 import type Echo from 'laravel-echo';
 import { cn } from '@/lib/utils';
+import { saveBlob } from '@/lib/download';
 
 interface SlashCommand {
   id: string;
@@ -166,6 +168,7 @@ export default function ReportChatPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [downloadingMessageId, setDownloadingMessageId] = useState<number | null>(null);
   const [isClosed, setIsClosed] = useState(false);
   const [closedReason, setClosedReason] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +238,9 @@ export default function ReportChatPage() {
 
   useEffect(() => {
     if (!Number.isFinite(applicationId)) return;
-    const echo = createEchoClient(getStaffToken) as Echo<'reverb'>;
+    const token = getStaffToken();
+    if (!token) return;
+    const echo = createEchoClient(() => token) as Echo<'reverb'>;
     const channel = echo.private(`application.${applicationId}.report`);
 
     channel.listen('.report.message', (event: ReportMessageDto) => {
@@ -269,7 +274,9 @@ export default function ReportChatPage() {
           setSelectedBranchId((prev) => prev || res.branches[0].id);
         }
       })
-      .catch(() => {});
+      .catch((branchFailure) => {
+        setScheduleError(branchFailure instanceof Error ? branchFailure.message : 'Impossible de charger les agences.');
+      });
   }, []);
 
   useEffect(() => {
@@ -289,10 +296,6 @@ export default function ReportChatPage() {
         c.description.toLowerCase().includes(query.replace('/', ''))
     );
   }, [body, isSlashActive]);
-
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [filteredCommands.length]);
 
   function executeSlashCommand(command: SlashCommand) {
     if (command.actionType === 'modal_schedule' || command.actionType === 'modal_branch') {
@@ -431,6 +434,19 @@ export default function ReportChatPage() {
     setSelectedFile(file);
   }
 
+  async function handleAttachmentDownload(message: ReportMessageDto) {
+    setDownloadingMessageId(message.id);
+    setError(null);
+    try {
+      const blob = await downloadReportAttachment(applicationId, message.id);
+      saveBlob(blob, message.attachment_name || `piece-jointe-${message.id}`);
+    } catch (downloadFailure) {
+      setError(downloadFailure instanceof Error ? downloadFailure.message : 'Impossible de télécharger la pièce jointe.');
+    } finally {
+      setDownloadingMessageId(null);
+    }
+  }
+
   async function handleScheduleSubmit() {
     if (!scheduledDate || !scheduledTime) {
       setScheduleError('Veuillez sélectionner une date et une heure valides.');
@@ -467,9 +483,9 @@ export default function ReportChatPage() {
   if (loading) return <PageLoading />;
 
   return (
-    <div className="px-4 sm:px-8 py-8 max-w-4xl mx-auto space-y-4">
+    <div className="admin-page max-w-4xl space-y-4">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between">
+      <div className="admin-page-hero flex items-center justify-between">
         <div>
           <Link href="/reports" className="inline-flex items-center gap-1.5 text-sm font-medium text-[#3D5166] hover:text-[#C0272D] transition-colors mb-2">
             <ArrowLeft className="size-4" />
@@ -485,7 +501,7 @@ export default function ReportChatPage() {
       <ErrorAlert message={error} />
 
       {/* ── Chat Container ── */}
-      <div className="bg-white rounded-2xl border border-[#E0E4E9] shadow-xs overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 240px)', minHeight: '460px' }}>
+      <div className="admin-surface flex min-h-[460px] h-[calc(100vh-240px)] flex-col overflow-hidden">
         {/* Messages list */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4 bg-[#FAFBFD]">
           {(messages || []).length === 0 ? (
@@ -498,10 +514,6 @@ export default function ReportChatPage() {
             (messages || []).map((msg) => {
               const isStaff = msg.sender_type === 'staff';
               const isSystemAnnouncement = msg.body.startsWith('📅') || msg.body.startsWith('🔒') || msg.body.startsWith('🚫') || msg.body.startsWith('🔓');
-
-              const downloadUrl = msg.attachment_url
-                ? `${getApiBaseUrl()}${msg.attachment_url}`
-                : `${getApiBaseUrl()}/api/staff/reports/${applicationId}/messages/${msg.id}/attachment`;
 
               return (
                 <div key={msg.id} className={`flex ${isStaff ? 'justify-end' : 'justify-start'}`}>
@@ -530,10 +542,10 @@ export default function ReportChatPage() {
                       {/* Attachment card */}
                       {msg.has_attachment && (
                         <div className="mt-2 pt-2 border-t border-current/20">
-                          <a
-                            href={downloadUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
+                            onClick={() => handleAttachmentDownload(msg)}
+                            disabled={downloadingMessageId === msg.id}
                             className={cn(
                               'inline-flex items-center gap-2 p-2 rounded-xl text-xs font-medium transition-colors',
                               isStaff
@@ -543,8 +555,12 @@ export default function ReportChatPage() {
                           >
                             <FileText className="size-4 shrink-0" />
                             <span className="truncate max-w-[200px]">{msg.attachment_name || 'Pièce jointe'}</span>
-                            <Download className="size-3.5 shrink-0 opacity-70" />
-                          </a>
+                            {downloadingMessageId === msg.id ? (
+                              <Loader2 className="size-3.5 shrink-0 animate-spin opacity-70" />
+                            ) : (
+                              <Download className="size-3.5 shrink-0 opacity-70" />
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -780,7 +796,10 @@ export default function ReportChatPage() {
                 ref={inputRef}
                 type="text"
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={(e) => {
+                  setBody(e.target.value);
+                  setSelectedIndex(0);
+                }}
                 onKeyDown={(e) => {
                   if (isSlashActive && filteredCommands.length > 0) {
                     if (e.key === 'ArrowDown') {
@@ -1139,4 +1158,3 @@ export default function ReportChatPage() {
     </div>
   );
 }
-

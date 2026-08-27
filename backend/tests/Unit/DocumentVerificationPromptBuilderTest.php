@@ -42,8 +42,8 @@ class DocumentVerificationPromptBuilderTest extends TestCase
     {
         $prompt = (new DocumentVerificationPromptBuilder)->build($this->document(), $this->client());
 
-        $this->assertStringContainsString('Extract the following fields', $prompt);
-        $this->assertStringContainsString('Compare each extracted field against the expected', $prompt);
+        $this->assertStringContainsString('EXTRACTION', $prompt);
+        $this->assertStringContainsString('COMPARAISON', $prompt);
         $this->assertStringContainsString('date_naissance', $prompt);
     }
 
@@ -60,7 +60,18 @@ class DocumentVerificationPromptBuilderTest extends TestCase
     {
         $prompt = (new DocumentVerificationPromptBuilder)->build($this->document('fiche_paie'), $this->client());
 
-        $this->assertStringNotContainsString('Compare each extracted field', $prompt);
-        $this->assertStringContainsString('mismatches as an empty array', $prompt);
+        $this->assertStringNotContainsString('COMPARAISON', $prompt);
+        $this->assertStringContainsString('mismatches = []', $prompt);
+    }
+
+    public function test_build_requires_a_short_french_only_comment(): void
+    {
+        $prompt = (new DocumentVerificationPromptBuilder)->build($this->document(), $this->client());
+
+        $this->assertStringContainsString('Tous les textes produits doivent être en français', $prompt);
+        $this->assertStringContainsString('160 caractères maximum', $prompt);
+        $this->assertStringContainsString('UNIQUEMENT', $prompt);
+        $this->assertStringContainsString('indiquer la cause précise puis l’action à effectuer', $prompt);
+        $this->assertStringContainsString('renvoie mismatches = []', $prompt);
     }
 }

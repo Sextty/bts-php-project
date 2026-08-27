@@ -1,98 +1,77 @@
-%%{init: {
-  'theme': 'base',
-  'themeVariables': {
-    'primaryColor': '#E8F5E9',
-    'primaryTextColor': '#1B5E20',
-    'primaryBorderColor': '#2E7D32',
-    'lineColor': '#37474F',
-    'secondaryColor': '#E3F2FD',
-    'tertiaryColor': '#FFF3E0',
-    'noteBkgColor': '#FFF9C4',
-    'noteTextColor': '#263238',
-    'noteBorderColor': '#FBC02D',
-    'actorBkg': '#E8EAF6',
-    'actorBorder': '#3949AB',
-    'actorTextColor': '#1A237E',
-    'actorLineColor': '#90CAF9',
-    'signalColor': '#263238',
-    'signalTextColor': '#263238',
-    'labelBoxBkgColor': '#ECEFF1',
-    'labelBoxBorderColor': '#90A4AE',
-    'labelTextColor': '#263238',
-    'loopTextColor': '#263238',
-    'activationBkgColor': '#CFD8DC',
-    'activationBorderColor': '#78909C',
-    'sequenceNumberColor': '#FFFFFF'
-  }
-}}%%
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
 sequenceDiagram
     autonumber
+    actor S as Agent d'agence
+    actor A as Administrateur
+    actor C as Client
+    participant API as API Laravel 12
+    participant REVIEW as CreditApplicationReviewService
+    participant STATE as Machine d'etats
+    participant RDV as AppointmentSchedulingService
+    participant DB as MariaDB
+    participant OUT as Outbox / notifications
 
-    box rgb(255, 243, 224) Actors
-        actor Staff as "Agent Staff (Agence)"
-        actor Admin as "Direction / Admin"
-        actor Client as "Client"
+    S->>API: GET /api/staff/applications/{id}
+    API->>DB: Dossier de l'agence + pieces + resultats IA
+    API-->>S: Vue d'instruction
+    alt Approbation premier niveau
+        S->>API: POST /api/staff/applications/{id}/approve
+        API->>REVIEW: staffApprove
+        REVIEW->>DB: Verrouille le dossier
+        REVIEW->>STATE: SUBMITTED -> STAFF_APPROVED
+        STATE->>DB: Decision staff + audit dans la transaction
+        REVIEW->>OUT: Notifie client et administrateurs
+        API-->>S: Transmis a la decision finale
+    else Rejet premier niveau
+        S->>API: POST /api/staff/applications/{id}/reject
+        API->>REVIEW: staffReject(reason)
+        REVIEW->>STATE: SUBMITTED -> STAFF_REJECTED
+        STATE->>DB: Motif + acteur + audit
+        REVIEW->>OUT: Notifie le client
     end
 
-    box rgb(232, 245, 233) Backend Services
-        participant API as "Laravel Backend API"
-        participant ReviewSvc as "CreditApplicationReviewService"
-        participant ApptSvc as "AppointmentSchedulingService"
-        participant DB as "MySQL Database"
+    A->>API: GET /api/staff/applications?status=STAFF_APPROVED
+    API-->>A: Dossiers eligibles
+    alt Approbation finale
+        A->>API: POST /api/staff/applications/{id}/admin-approve
+        API->>REVIEW: adminApprove
+        REVIEW->>DB: Verrou dossier puis agence
+        REVIEW->>STATE: STAFF_APPROVED -> APPROVED
+        REVIEW->>RDV: proposeNext
+        RDV->>DB: Cherche le premier jour ouvrable apres aujourd'hui
+        RDV->>DB: Verifie capacite, creneaux et essais precedents
+        RDV->>STATE: APPROVED -> APPOINTMENT_PROPOSED
+        RDV->>DB: appointments(attempt=1,status=proposed)
+        RDV->>OUT: appointment.created
+        API-->>A: APPROVED + rendez-vous propose
+    else Rejet final
+        A->>API: POST /api/staff/applications/{id}/admin-reject
+        API->>REVIEW: adminReject(reason)
+        REVIEW->>STATE: STAFF_APPROVED -> REJECTED
+        REVIEW->>OUT: Notifie le client
     end
 
-    box rgb(224, 242, 241) Real-Time
-        participant Reverb as "Laravel Reverb (WebSockets)"
+    C->>API: GET /api/applications/{id}/appointment
+    API-->>C: Agence, date, heure, tentative
+    alt Client accepte
+        C->>API: POST /api/applications/{id}/appointment/accept
+        API->>RDV: accept
+        RDV->>DB: appointment=accepted
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_CONFIRMED
+    else Client refuse et tentative < 5
+        C->>API: POST /api/applications/{id}/appointment/reject
+        API->>RDV: reject
+        RDV->>DB: appointment=rejected
+        RDV->>RDV: Recherche un autre creneau ouvrable
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_PROPOSED
+        RDV->>OUT: appointment.changed
+    else Cinquieme refus
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_LOCKED
+        RDV->>OUT: Intervention staff requise
     end
 
-    %% Flow 1: Staff L1 Review
-    rect rgb(235, 245, 255)
-        Note over Staff, DB: Flow 1: Staff L1 Review (Agence Locale)
-        Staff->>API: GET /api/staff/applications/{id}
-        API->>DB: Load complete dossier + docs + Google Gemini analysis
-        DB-->>API: Dossier details, documents & AI analysis results
-        API-->>Staff: Dossier details & AI recommendations
-
-        Staff->>API: POST /api/staff/applications/{id}/review { decision: 'STAFF_APPROVED', notes }
-        API->>ReviewSvc: handleStaffDecision(application, decision, notes)
-        ReviewSvc->>DB: UPDATE status='STAFF_APPROVED', staff_reviewed_by, staff_reviewed_at
-        ReviewSvc->>DB: Log in audit_logs ('STAFF_APPROVED')
-        ReviewSvc->>Reverb: Broadcast notification ('STAFF_APPROVAL_COMPLETED')
-        API-->>Staff: HTTP 200 { message: 'Transmis a la direction' }
-    end
-
-    %% Flow 2: Admin L2 Final Decision
-    rect rgb(255, 248, 225)
-        Note over Admin, DB: Flow 2: Admin L2 Final Decision & Automatic Scheduling
-        Admin->>API: GET /api/admin/applications/pending
-        API->>DB: Query dossiers WHERE status='STAFF_APPROVED'
-        DB-->>API: List of staff-approved dossiers
-        API-->>Admin: List of staff-approved dossiers
-
-        Admin->>API: POST /api/staff/applications/{id}/final-approval { decision: 'APPROVED' }
-        API->>ReviewSvc: handleAdminDecision(application, 'APPROVED')
-        ReviewSvc->>DB: UPDATE status='ADMIN_APPROVED', admin_reviewed_by, admin_reviewed_at
-        ReviewSvc->>DB: Log in audit_logs ('ADMIN_APPROVED')
-
-        ReviewSvc->>ApptSvc: proposeBranchAppointment(application)
-        ApptSvc->>DB: Find available slot
-        DB-->>ApptSvc: Available slot (Date: +3 days, Branch ID)
-        ApptSvc->>DB: INSERT appointment (status: 'PROPOSED', date: '+3 days')
-        ApptSvc->>DB: INSERT notification (user_id, 'Credit approuve')
-        ApptSvc->>Reverb: Broadcast appointment event ('APPOINTMENT_PROPOSED')
-        API-->>Admin: HTTP 200 { status: 'APPROVED', appointment_created: true }
-    end
-
-    %% Flow 3: Client Appointment Confirmation
-    rect rgb(232, 245, 233)
-        Note over Client, DB: Flow 3: Client Appointment Confirmation
-        Reverb-->>Client: Real-time notification 'Credit approuve !'
-        Client->>API: GET /api/applications/{id}/appointment
-        API->>DB: Query appointment details
-        DB-->>API: Proposed appointment slot
-        API-->>Client: Proposed slot details (branch, date, hours)
-
-        Client->>API: POST /api/applications/{id}/appointment/confirm
-        API->>DB: UPDATE appointment SET status='CONFIRMED'
-        API-->>Client: HTTP 200 { status: 'CONFIRMED' }
+    opt Chemin manuel actuellement defectueux
+        S->>API: POST /api/staff/reports/{id}/appointment
+        API->>RDV: scheduleManual depuis STAFF_APPROVED
+        Note over S,RDV: F-001 - contourne l'approbation admin, correction P1 requise
     end

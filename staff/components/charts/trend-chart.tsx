@@ -2,7 +2,7 @@
 
 import { useId, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { TrendingUp, BarChart2, Activity, Zap, Maximize2 } from 'lucide-react';
+import { TrendingUp, BarChart2, Activity } from 'lucide-react';
 
 export interface TrendSeries {
   key: string;
@@ -225,7 +225,7 @@ export function TrendChart({
             </clipPath>
 
             {/* Gradient definition for each series */}
-            {series.map((s, idx) => (
+            {series.map((s) => (
               <linearGradient
                 key={s.key}
                 id={`${gradPrefix}-${s.key}`}

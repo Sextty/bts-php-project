@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * In-app notification (distinct from Illuminate\Notifications\Notification on purpose — naming
@@ -34,6 +35,11 @@ class AppNotification extends Model
     public function notifiable(): \Illuminate\Database\Eloquent\Relations\MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(NotificationDelivery::class);
     }
 
     public function markAsRead(): void

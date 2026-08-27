@@ -97,4 +97,10 @@ abstract class CreditApplicationTestCase extends TestCase
     {
         $this->putJson("/api/applications/{$application->id}/client", $this->validClientPayload())->assertOk();
     }
+
+    protected function completeStep2(CreditApplication $application): void
+    {
+        $this->completeStep1($application);
+        $this->putJson("/api/applications/{$application->id}/credit", $this->validCreditRequestPayload())->assertOk();
+    }
 }

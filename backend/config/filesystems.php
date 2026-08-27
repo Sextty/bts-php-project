@@ -56,7 +56,9 @@ return [
         // S3-compatible stores (MinIO, Ceph, Scaleway...) as well as AWS proper.
         'documents' => [
             'driver' => env('DOCUMENTS_DISK', 'local'),
-            'root' => storage_path('app/documents'),
+            // Phase 5 can point an isolated process at a disposable root without touching
+            // normal development documents. Production/default behaviour is unchanged.
+            'root' => env('DOCUMENTS_LOCAL_ROOT', storage_path('app/documents')),
             'visibility' => 'private',
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),

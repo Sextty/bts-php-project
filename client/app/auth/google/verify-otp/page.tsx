@@ -32,8 +32,8 @@ function VerifyOtpContent() {
   if (!preAuthToken) return null;
 
   return (
-    <AuthCard title="Verify your phone" description="Enter the 6-digit code we sent to your phone.">
-      <OtpVerifyForm onVerify={handleVerify} submitLabel="Verify and continue" />
+    <AuthCard title="Vérifiez votre téléphone" description="Saisissez le code à 6 chiffres envoyé sur votre téléphone.">
+      <OtpVerifyForm onVerify={handleVerify} submitLabel="Vérifier et continuer" />
     </AuthCard>
   );
 }

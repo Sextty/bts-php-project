@@ -37,13 +37,13 @@ class VonageSmsDriver implements SmsProviderInterface
         $recipient = ltrim((string) $user->phone, '+');
 
         try {
-            $response = $client->messages()->send(new SMSText($recipient, $this->brandName, $message->body));
+            $client->messages()->send(new SMSText($recipient, $this->brandName, $message->body));
 
-            Log::info('[sms:vonage] message accepted', ['to' => $recipient, 'response' => $response]);
+            Log::info('[sms:vonage] message accepted', ['user_id' => $user->id]);
 
             return SmsDeliveryResult::success();
         } catch (\Throwable $e) {
-            Log::error('[sms:vonage] send failed', ['to' => $recipient, 'exception' => $e->getMessage()]);
+            Log::error('[sms:vonage] send failed', ['user_id' => $user->id, 'exception_class' => $e::class]);
 
             return SmsDeliveryResult::failure($e->getMessage(), transient: true);
         }

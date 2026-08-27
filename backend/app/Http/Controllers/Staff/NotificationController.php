@@ -20,7 +20,7 @@ class NotificationController extends Controller
     {
         $query = AppNotification::forNotifiable($request->user())
             ->latest()
-            ->limit(min((int) $request->query('limit', 50), 100));
+            ->limit(max(1, min((int) $request->query('limit', 50), 100)));
 
         return AppNotificationResource::collection($query->get());
     }
@@ -37,7 +37,7 @@ class NotificationController extends Controller
             $query->unread();
         }
 
-        $query->get()->each->markAsRead();
+        $query->update(['read_at' => now()]);
 
         return response()->json(['message' => 'Notifications marked as read.']);
     }

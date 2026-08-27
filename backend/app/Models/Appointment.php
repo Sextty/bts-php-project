@@ -17,12 +17,16 @@ class Appointment extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
-    public const MAX_ATTEMPTS = 5;
+    /** Initial automatic proposal plus four successful customer reschedules. */
+    public const MAX_RESCHEDULES = 4;
+
+    public const MAX_ATTEMPTS = self::MAX_RESCHEDULES + 1;
 
     protected $fillable = [
         'credit_application_id',
         'branch_id',
         'attempt_number',
+        'reschedule_count',
         'scheduled_date',
         'scheduled_time',
         'status',
@@ -35,6 +39,7 @@ class Appointment extends Model
         return [
             'scheduled_date' => 'date',
             'attempt_number' => 'integer',
+            'reschedule_count' => 'integer',
             'is_auto_scheduled_future' => 'boolean',
             'decided_at' => 'datetime',
         ];
@@ -43,6 +48,21 @@ class Appointment extends Model
     public function isAutoScheduledFuture(): bool
     {
         return (bool) $this->is_auto_scheduled_future;
+    }
+
+    public function rescheduleCount(): int
+    {
+        return max(0, (int) $this->reschedule_count);
+    }
+
+    public function remainingReschedules(): int
+    {
+        return max(0, self::MAX_RESCHEDULES - $this->rescheduleCount());
+    }
+
+    public function canSelfReschedule(): bool
+    {
+        return $this->status === self::STATUS_PROPOSED && $this->remainingReschedules() > 0;
     }
 
     public function creditApplication(): BelongsTo

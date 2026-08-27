@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\CreditApplication;
 
+use App\Models\Branch;
 use App\Models\CreditApplication;
 use App\Models\Document;
 use App\Models\StaffUser;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
@@ -16,6 +16,8 @@ class DocumentVerificationTest extends CreditApplicationTestCase
     {
         parent::setUp();
         Storage::fake('documents');
+        config(['services.document_verification.provider' => 'gemini']);
+        Branch::factory()->default()->create();
     }
 
     private function applicationReadyForValidation(): CreditApplication
@@ -26,7 +28,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
         $this->putJson("/api/applications/{$application->id}/project", $this->validProjectPayload());
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
 
         return $application;
@@ -43,6 +45,15 @@ class DocumentVerificationTest extends CreditApplicationTestCase
         return [
             'candidates' => [
                 ['content' => ['parts' => [['text' => json_encode($payload)]]]],
+            ],
+        ];
+    }
+
+    private function openRouterEnvelope(array $payload): array
+    {
+        return [
+            'choices' => [
+                ['message' => ['role' => 'assistant', 'content' => json_encode($payload)]],
             ],
         ];
     }
@@ -77,6 +88,77 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $document = Document::where('credit_application_id', $application->id)->firstOrFail();
         $this->assertNull($document->ai_verified_at);
+    }
+
+    public function test_openrouter_minimax_provider_verifies_document_through_existing_pipeline(): void
+    {
+        config([
+            'services.document_verification.provider' => 'openrouter',
+            'services.openrouter.api_key' => 'test-key',
+            'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
+            'services.openrouter.model' => 'minimax/minimax-m3:free',
+        ]);
+        Http::fake([
+            'openrouter.ai/*' => Http::response($this->openRouterEnvelope($this->validVerdict()), 200),
+        ]);
+        $application = $this->applicationReadyForValidation();
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        $document = Document::where('credit_application_id', $application->id)->firstOrFail();
+        $this->assertTrue($document->ai_is_valid);
+        $this->assertSame('high', $document->ai_confidence);
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://openrouter.ai/api/v1/chat/completions'
+            && ($request->data()['model'] ?? null) === 'minimax/minimax-m3:free');
+    }
+
+    public function test_openrouter_rate_limit_cannot_exhaust_the_php_request_deadline(): void
+    {
+        config([
+            'services.document_verification.provider' => 'openrouter',
+            'services.document_verification.validation_budget_seconds' => 1,
+            'services.openrouter.api_key' => 'test-key',
+            'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
+            'services.openrouter.model' => 'minimax/minimax-m3:free',
+            'services.openrouter.max_retries' => 1,
+        ]);
+        Http::fake([
+            'openrouter.ai/*' => Http::response('rate limited', 429, ['Retry-After' => '10']),
+        ]);
+        $application = $this->applicationReadyForValidation();
+        $this->postJson("/api/applications/{$application->id}/documents", [
+            'document_type' => 'devis',
+            'file' => $this->fakePdf('devis.pdf', 500),
+        ]);
+        $startedAt = microtime(true);
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        $this->assertLessThan(2.0, microtime(true) - $startedAt);
+        $this->assertSame(2, Document::where('credit_application_id', $application->id)
+            ->where('ai_processing_status', 'failed')
+            ->count());
+    }
+
+    public function test_local_only_mode_never_sends_customer_documents_to_a_cloud_provider(): void
+    {
+        config(['services.document_verification.provider' => 'local']);
+        Http::fake();
+        $application = $this->applicationReadyForValidation();
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        Http::assertNothingSent();
+        $document = Document::where('credit_application_id', $application->id)->firstOrFail();
+        $this->assertNull($document->ai_verified_at);
+        $this->assertSame('failed', $document->ai_processing_status);
     }
 
     public function test_validation_1_still_passes_when_gemini_returns_an_error(): void
@@ -117,7 +199,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
     {
         $this->fakeGemini($this->validVerdict([
             'is_valid' => false,
-            'comment' => 'Image appears to be a screenshot of a screen.',
+            'comment' => 'Le fichier est une capture d’écran et non une pièce d’identité exploitable.',
             'mismatches' => [],
         ]));
 
@@ -127,8 +209,9 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $response->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
         $this->assertSame(CreditApplication::STATUS_READY_FOR_VALIDATION_1, $application->fresh()->status);
-        $this->assertStringContainsString('AI verification failed', $response->json('error.errors.0'));
-        $this->assertStringContainsString('screenshot of a screen', $response->json('error.errors.0'));
+        $this->assertStringNotContainsString('vérification IA échouée', $response->json('error.errors.0'));
+        $this->assertStringContainsString('capture d’écran', $response->json('error.errors.0'));
+        $this->assertStringContainsString('Remplacez ce fichier', $response->json('error.errors.0'));
 
         $document = Document::where('credit_application_id', $application->id)->firstOrFail();
         $this->assertFalse($document->ai_is_valid);
@@ -138,7 +221,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
     {
         $this->fakeGemini($this->validVerdict([
             'mismatches' => [
-                ['field' => 'nom', 'expected' => 'Ben Salah', 'extracted' => 'Other Name', 'severity' => 'critical'],
+                ['field' => 'nom', 'expected' => 'Ben Salah', 'extracted' => 'Autre Nom', 'severity' => 'critical'],
             ],
         ]));
 
@@ -147,16 +230,93 @@ class DocumentVerificationTest extends CreditApplicationTestCase
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
 
         $response->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
-        $this->assertStringContainsString('AI verification failed', $response->json('error.errors.0'));
-        $this->assertStringContainsString('Nom', $response->json('error.errors.0'));
-        $this->assertStringContainsString('"Ben Salah"', $response->json('error.errors.0'));
-        $this->assertStringContainsString('"Other Name"', $response->json('error.errors.0'));
+        $this->assertStringContainsString('Nom différent', $response->json('error.errors.0'));
+        $this->assertStringContainsString('« Ben Salah »', $response->json('error.errors.0'));
+        $this->assertStringContainsString('« Autre Nom »', $response->json('error.errors.0'));
 
         $document = Document::where('credit_application_id', $application->id)->firstOrFail();
         $this->assertFalse($document->ai_is_valid);
         $this->assertSame([
-            ['field' => 'nom', 'expected' => 'Ben Salah', 'extracted' => 'Other Name', 'severity' => 'critical'],
+            ['field' => 'nom', 'expected' => 'Ben Salah', 'extracted' => 'Autre Nom', 'severity' => 'critical'],
         ], $document->ai_mismatches);
+    }
+
+    public function test_wrong_document_explains_the_real_problem_once_in_french(): void
+    {
+        $this->fakeGemini($this->validVerdict([
+            'is_valid' => false,
+            'comment' => 'Le fichier est une illustration et non une carte d’identité.',
+            'extracted_fields' => [
+                'nom' => null,
+                'prenom' => null,
+                'date_naissance' => null,
+                'numero_pid' => null,
+                'date_delivrance_pid' => null,
+            ],
+            'mismatches' => [
+                ['field' => 'nom', 'expected' => 'Ben Salah', 'extracted' => null, 'severity' => 'critical'],
+                ['field' => 'prenom', 'expected' => 'Karim', 'extracted' => null, 'severity' => 'critical'],
+                ['field' => 'numero_pid', 'expected' => '12345678', 'extracted' => null, 'severity' => 'critical'],
+            ],
+        ]));
+
+        $application = $this->applicationReadyForValidation();
+        $response = $this->postJson("/api/applications/{$application->id}/validation-1");
+        $message = $response->json('error.errors.0');
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.message', 'Certains éléments du dossier doivent être corrigés.');
+        $this->assertStringContainsString('illustration et non une carte d’identité', $message);
+        $this->assertStringContainsString('Carte d’Identité Nationale (CIN)', str_replace("'", '’', $message));
+        $this->assertStringNotContainsString('détecté « — »', $message);
+        $this->assertStringNotContainsString('Nom ne correspond pas', $message);
+    }
+
+    public function test_unchanged_rejected_document_stays_blocked_on_retry(): void
+    {
+        $this->fakeGemini($this->validVerdict([
+            'is_valid' => false,
+            'comment' => 'Le fichier est un fond d’écran et non une carte d’identité.',
+            'mismatches' => [],
+        ]));
+
+        $application = $this->applicationReadyForValidation();
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_1_FAILED')
+            ->assertJsonPath('error.errors.0', fn (string $message): bool => str_contains($message, 'fond d’écran'));
+
+        $this->assertSame(CreditApplication::STATUS_READY_FOR_VALIDATION_1, $application->fresh()->status);
+        Http::assertSentCount(2);
+    }
+
+    public function test_local_mode_does_not_enforce_a_historical_cloud_ai_rejection(): void
+    {
+        $this->fakeGemini($this->validVerdict([
+            'is_valid' => false,
+            'comment' => 'Le fichier est synthétique.',
+            'mismatches' => [],
+        ]));
+        $application = $this->applicationReadyForValidation();
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertStatus(422);
+
+        config(['services.document_verification.provider' => 'local']);
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        Http::assertSentCount(1);
+        $document = Document::where('credit_application_id', $application->id)->firstOrFail();
+        $this->assertFalse($document->ai_is_valid);
+        $this->assertNotNull($document->ai_verified_at);
     }
 
     public function test_validation_1_passes_when_ai_verdict_is_valid_with_matching_fields(): void
@@ -294,7 +454,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $application = $this->submittedApplication();
 
-        $staff = StaffUser::factory()->create();
+        $staff = StaffUser::factory()->forBranch($application->fresh()->branch)->create();
         Sanctum::actingAs($staff, ['*']);
 
         $response = $this->getJson("/api/staff/applications/{$application->id}");
@@ -312,19 +472,19 @@ class DocumentVerificationTest extends CreditApplicationTestCase
             ->push($this->geminiEnvelope($this->validVerdict([
                 'is_valid' => false,
                 'confidence' => 'medium',
-                'comment' => 'Document appears to have been tampered with.',
+                'comment' => 'Le document présente des signes visibles de modification.',
             ])))]);
 
         $application = $this->applicationReadyForValidation();
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin2.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin2.pdf', 500),
         ]);
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
 
         $response->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
-        $this->assertStringContainsString('tampered with', $response->json('error.errors.0'));
+        $this->assertStringContainsString('signes visibles de modification', $response->json('error.errors.0'));
 
         $documents = Document::where('credit_application_id', $application->id)->get();
         $this->assertSame(2, $documents->count());
@@ -351,7 +511,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $application = $this->submittedApplication();
 
-        $staff = StaffUser::factory()->create();
+        $staff = StaffUser::factory()->forBranch($application->fresh()->branch)->create();
         Sanctum::actingAs($staff, ['*']);
 
         $response = $this->getJson("/api/staff/applications/{$application->id}");
@@ -376,7 +536,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $application = $this->submittedApplication();
 
-        $staff = StaffUser::factory()->create();
+        $staff = StaffUser::factory()->forBranch($application->fresh()->branch)->create();
         Sanctum::actingAs($staff, ['*']);
 
         $response = $this->getJson("/api/staff/applications/{$application->id}");

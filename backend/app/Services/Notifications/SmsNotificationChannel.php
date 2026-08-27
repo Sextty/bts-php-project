@@ -4,11 +4,12 @@ namespace App\Services\Notifications;
 
 use App\Contracts\NotificationChannelInterface;
 use App\Contracts\SmsProviderInterface;
+use App\Exceptions\Notifications\PermanentNotificationDeliveryException;
 use App\Models\AppNotification;
 use App\Models\User;
 use App\ValueObjects\OtpMessage;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 /**
  * SMS channel, delivered through the configured SMS provider (the same SmsProviderInterface the
@@ -32,11 +33,7 @@ class SmsNotificationChannel implements NotificationChannelInterface
     public function deliver(Model $notifiable, AppNotification $notification): void
     {
         if (! $this->canReach($notifiable)) {
-            Log::debug('[notification] sms skipped — recipient unreachable via provider', [
-                'notification_id' => $notification->id,
-            ]);
-
-            return;
+            throw new PermanentNotificationDeliveryException('Recipient is unreachable through the configured SMS provider.');
         }
 
         $message = new OtpMessage('', 0, $notification->body);
@@ -44,11 +41,7 @@ class SmsNotificationChannel implements NotificationChannelInterface
         $result = $this->provider->send($notifiable, $message);
 
         if (! $result->ok) {
-            Log::warning('[notification] sms delivery not confirmed', [
-                'notification_id' => $notification->id,
-                'provider' => config('services.sms.provider'),
-                'error' => $result->error,
-            ]);
+            throw new RuntimeException('SMS provider did not confirm delivery.');
         }
     }
 }

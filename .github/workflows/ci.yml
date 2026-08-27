@@ -9,7 +9,37 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  security-supply-chain:
+    name: Secrets and SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned Gitleaks OSS binary
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output /tmp/gitleaks.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+
+      - name: Scan complete Git history for secrets
+        run: /tmp/gitleaks git . --no-banner --redact --max-decode-depth=2 --max-archive-depth=1
+
+      - name: Generate SPDX SBOM with Syft
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          artifact-name: bts-bank-sbom.spdx.json
+
   backend:
     name: Backend (Laravel) — tests, audit
     runs-on: ubuntu-latest
@@ -43,6 +73,9 @@ jobs:
       - name: Security audit (Packagist advisories)
         run: composer audit --no-interaction
 
+      - name: Validate Composer metadata
+        run: composer validate --strict
+
       - name: Run test suite (SQLite in-memory, network-isolated)
         run: php artisan test
 
@@ -50,6 +83,190 @@ jobs:
         run: |
           touch database/database.sqlite
           DB_CONNECTION=sqlite DB_DATABASE=database/database.sqlite php artisan migrate --force
+
+  backend-mariadb:
+    name: Backend schema — MariaDB 11.4
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: bts_p0p1_concurrency_1
+          MARIADB_USER: bts_ci
+          MARIADB_PASSWORD: bts_ci_password
+          MARIADB_ROOT_PASSWORD: root_ci_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: bts_p0p1_concurrency_1
+      DB_USERNAME: bts_ci
+      DB_PASSWORD: bts_ci_password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.example .env
+      - run: php artisan key:generate
+      - name: Run the real MariaDB migration chain
+        run: php artisan migrate --force
+      - name: Verify workflow column and audit integrity bootstrap
+        run: |
+          php artisan db:show
+          php artisan audit:verify-integrity
+      - name: Run MariaDB schema and Phase 2 security tests
+        run: php artisan test tests/Feature/Database tests/Feature/Security/AuditIntegrityTest.php tests/Feature/Documents/DocumentDownloadTest.php
+      - name: Run MariaDB concurrency tests last (subprocess commits are intentional)
+        run: php artisan test tests/Feature/MariaDb
+
+  synthetic-load-smoke:
+    name: Synthetic API load smoke — 5 users
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_DATABASE: bts_load_20260824000000_ci
+          MARIADB_USER: bts_load_ci
+          MARIADB_PASSWORD: synthetic_ci_password
+          MARIADB_ROOT_PASSWORD: synthetic_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: loadtest
+      APP_DEBUG: 'false'
+      BTS_LOAD_TEST_ENABLED: 'true'
+      BTS_LOAD_TEST_OTP_COLLECTOR_URL: http://127.0.0.1:8299
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: bts_load_20260824000000_ci
+      DB_USERNAME: bts_load_ci
+      DB_PASSWORD: synthetic_ci_password
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+      BROADCAST_CONNECTION: reverb
+      SMS_PROVIDER: loadtest
+      DOCUMENTS_LOCAL_ROOT: /tmp/bts-load-ci-documents
+      DOCUMENT_VERIFICATION_PROVIDER: local
+      DOCUMENT_MALWARE_SCAN: optional
+      QUEUE_WORKER_HEALTH_REQUIRED: 'false'
+      SCHEDULER_HEALTH_REQUIRED: 'false'
+      REVERB_APP_ID: loadtest-ci
+      REVERB_APP_KEY: loadtest-ci-key
+      REVERB_HOST: 127.0.0.1
+      REVERB_PORT: 6201
+      REVERB_SERVER_HOST: 127.0.0.1
+      REVERB_SERVER_PORT: 6201
+      REVERB_SCHEME: http
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo_mysql
+          coverage: none
+          tools: composer:v2
+      - name: Create ephemeral load-test secrets
+        shell: bash
+        run: |
+          app_key="base64:$(openssl rand -base64 32 | tr -d '\n')"
+          {
+            echo "APP_KEY=$app_key"
+            echo "AUDIT_HMAC_KEY=$app_key"
+            echo "BTS_LOAD_TEST_OTP_COLLECTOR_TOKEN=$(openssl rand -hex 32)"
+            echo "REVERB_APP_SECRET=$(openssl rand -hex 32)"
+          } >> "$GITHUB_ENV"
+      - name: Install backend dependencies
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Install checksum-verified k6 1.5.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://github.com/grafana/k6/releases/download/v1.5.0
+          curl -fsSL "$base/k6-v1.5.0-linux-amd64.tar.gz" -o /tmp/k6.tar.gz
+          curl -fsSL "$base/k6-v1.5.0-checksums.txt" -o /tmp/k6-checksums.txt
+          grep ' k6-v1.5.0-linux-amd64.tar.gz$' /tmp/k6-checksums.txt | sed 's#  k6-#  /tmp/k6-#' | sha256sum --check
+          tar -xzf /tmp/k6.tar.gz -C /tmp
+          sudo install /tmp/k6-v1.5.0-linux-amd64/k6 /usr/local/bin/k6
+      - name: Run real API workflow and correctness smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=/tmp/bts-load-ci-manifest.json
+          results=/tmp/bts-load-ci-results
+          mkdir -p "$results" "$DOCUMENTS_LOCAL_ROOT"
+          cleanup() {
+            jobs -pr | xargs -r kill || true
+            rm -f "$manifest"
+          }
+          trap cleanup EXIT
+          cd backend
+          php artisan migrate --force
+          php artisan db:seed --class='Database\Seeders\BranchSeeder' --force
+          php artisan bts:prepare-load-test --accounts=5 --applications-per-account=1 --seed=ci-smoke --output="$manifest"
+          python ../tools/synthetic-load-tester/otp_collector.py >/tmp/otp-collector.log 2>&1 &
+          PHP_CLI_SERVER_WORKERS=5 php artisan serve --host=127.0.0.1 --port=8200 >/tmp/api.log 2>&1 &
+          php artisan queue:work --sleep=1 --tries=5 --backoff=2 --timeout=90 >/tmp/queue.log 2>&1 &
+          php artisan reverb:start --host=127.0.0.1 --port=6201 >/tmp/reverb.log 2>&1 &
+          for attempt in {1..60}; do
+            curl -fsS http://127.0.0.1:8200/api/load-test/status >/dev/null && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8200/api/load-test/status >/dev/null
+          cd ..
+          BTS_MANIFEST="$manifest" \
+          BTS_BASE_URL=http://127.0.0.1:8200 \
+          BTS_OTP_COLLECTOR_URL=http://127.0.0.1:8299 \
+          BTS_OTP_COLLECTOR_TOKEN="$BTS_LOAD_TEST_OTP_COLLECTOR_TOKEN" \
+          BTS_OUTPUT_DIR="$results" BTS_SCENARIO=application BTS_PATTERN=burst \
+          BTS_ACCOUNTS=5 BTS_CONCURRENCY=5 BTS_APPLICATIONS_PER_ACCOUNT=1 BTS_DURATION=3m \
+          k6 run tools/synthetic-load-tester/k6/bts-load-test.js
+          cd backend
+          drained=false
+          for attempt in {1..120}; do
+            status="$(php artisan operations:status --json)"
+            queue="$(jq -r '.checks.queue.detail' <<<"$status")"
+            outbox="$(jq -r '.checks.async_outbox.detail' <<<"$status")"
+            failed="$(jq -r '.checks.failed_jobs.detail' <<<"$status")"
+            if [[ "$queue" == *'ready=0'* && "$queue" == *'reserved=0'* && "$outbox" == *'pending=0'* && "$outbox" == *'processing=0'* && "$outbox" == *'failed=0'* && "$failed" == *'count=0'* ]]; then
+              drained=true
+              break
+            fi
+            sleep 1
+          done
+          test "$drained" = true
+          php artisan bts:verify-load-test --manifest="$manifest" --scenario=application --accounts=5 --applications-per-account=1 --json="$results/correctness.json"
+      - name: Upload synthetic smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-load-smoke
+          path: /tmp/bts-load-ci-results
+          if-no-files-found: warn
+          retention-days: 7
 
   frontend-client:
     name: Client (Next.js) — lint, types, build
@@ -88,6 +305,7 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
 
   frontend-admin:
     name: Admin (Next.js) — lint, types, build
@@ -106,3 +324,24 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  frontend-security-center:
+    name: Security Center (Next.js) — lint, types, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sc/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high

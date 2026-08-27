@@ -52,15 +52,7 @@ class AppointmentController extends Controller
 
         $application = $application->fresh();
 
-        // latestAppointment() returns the newest row regardless of status, so on the 3rd
-        // rejection (locked, no new proposal made) it would return the very appointment that
-        // was just rejected — the frontend needs `appointment: null` here to mean "no new
-        // proposal, you're locked," not the rejected one it should already know about. Gating
-        // on the application's status (not just "does a row exist") is what makes that
-        // distinction — caught by a test asserting `appointment: null` on the 3rd rejection.
-        $next = $application->status === CreditApplication::STATUS_APPOINTMENT_PROPOSED
-            ? $application->latestAppointment()
-            : null;
+        $next = $application->latestAppointment();
         $next?->load('branch');
 
         return ApiResponse::ok([

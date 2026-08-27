@@ -19,10 +19,12 @@ return [
 
     'allowed_origins' => array_values(array_filter(array_map('trim', explode(',', env(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:3000,http://localhost:3001,http://localhost:3002'
+        'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003'
     ))))),
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => env('CORS_ALLOW_LOCAL_DEVELOPMENT', env('APP_ENV') !== 'production')
+        ? ['#^http://(localhost|127\.0\.0\.1):(3000|3001|3002|3003)$#']
+        : [],
 
     'allowed_headers' => ['*'],
 

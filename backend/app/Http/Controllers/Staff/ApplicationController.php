@@ -38,15 +38,18 @@ class ApplicationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $status = $request->query('status');
+        $statusFilter = $request->query('status');
+        $statuses = is_array($statusFilter)
+            ? array_values(array_filter($statusFilter, static fn ($status): bool => is_string($status) && $status !== ''))
+            : ($statusFilter !== null && $statusFilter !== '' ? [$statusFilter] : []);
 
-        if ($status !== null && ! in_array($status, self::REVIEW_STATUSES, true)) {
+        if (count($statuses) !== count(array_intersect($statuses, self::REVIEW_STATUSES))) {
             throw new ApiException(ApiErrorCode::InvalidStatusFilter);
         }
 
         $applications = CreditApplication::query()
             ->accessibleToStaff($request->user())
-            ->whereIn('status', $status ? [$status] : self::REVIEW_STATUSES)
+            ->whereIn('status', $statuses !== [] ? $statuses : self::REVIEW_STATUSES)
             ->with(['user', 'client', 'creditRequest', 'project', 'branch', 'appointments.branch'])
             ->latest('submitted_at')
             ->paginate(25);

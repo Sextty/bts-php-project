@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Branch;
 use App\Models\StaffUser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
@@ -11,9 +12,7 @@ use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Bootstraps a staff/admin account. There is no self-registration for internal employees — this
- * is the only way one gets created, matching how the review plan treats staff accounts as an
- * ops task rather than a signup flow.
+ * Bootstraps a staff, security or admin account.
  */
 class StaffMake extends Command
 {
@@ -21,24 +20,38 @@ class StaffMake extends Command
                             {email : Email address for the new account}
                             {--first-name= : First name (prompted if omitted)}
                             {--last-name= : Last name (prompted if omitted)}
-                            {--role=staff : "staff" or "admin"}
+                            {--role=staff : "staff", "security", or "admin"}
+                            {--branch-id= : Required branch ID for operational staff}
                             {--password= : Password (generated and printed once if omitted)}';
 
-    protected $description = 'Create a staff or admin account';
+    protected $description = 'Create a staff, security, or admin account';
 
     public function handle(): int
     {
         $email = $this->argument('email');
         $role = $this->option('role');
 
-        if (! in_array($role, ['staff', 'admin'], true)) {
-            $this->error('--role must be "staff" or "admin".');
+        if (! in_array($role, ['staff', 'security', 'admin'], true)) {
+            $this->error('--role must be "staff", "security", or "admin".');
 
             return self::FAILURE;
         }
 
         if (StaffUser::where('email', $email)->exists()) {
             $this->error("A staff account with email {$email} already exists.");
+
+            return self::FAILURE;
+        }
+
+        $branchId = $this->option('branch-id');
+        if ($role === 'staff' && $branchId === null) {
+            $this->error('--branch-id is required for staff accounts.');
+
+            return self::FAILURE;
+        }
+
+        if ($branchId !== null && (! ctype_digit((string) $branchId) || ! Branch::whereKey((int) $branchId)->exists())) {
+            $this->error('--branch-id must identify an existing branch.');
 
             return self::FAILURE;
         }
@@ -69,6 +82,7 @@ class StaffMake extends Command
             'password' => Hash::make($password),
             'role' => $role,
             'status' => 'active',
+            'branch_id' => $branchId === null ? null : (int) $branchId,
         ]);
 
         $this->info("Created {$role} account: {$staff->email} (id {$staff->id}).");

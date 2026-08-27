@@ -15,6 +15,7 @@ class DocumentResource extends JsonResource
             'original_filename' => $this->original_filename,
             'mime_type' => $this->mime_type,
             'size_bytes' => $this->size_bytes,
+            'malware_scan_status' => $this->malware_scan_status,
             'uploaded_at' => $this->created_at,
             'ai_verified_at' => $this->ai_verified_at,
             'ai_is_valid' => $this->ai_is_valid,

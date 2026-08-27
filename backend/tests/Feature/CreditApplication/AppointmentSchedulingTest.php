@@ -7,9 +7,11 @@ use App\Models\Branch;
 use App\Models\CreditApplication;
 use App\Models\StaffUser;
 use App\Models\User;
+use App\Services\AppointmentSchedulingService;
+use App\Services\BranchMatchingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -24,8 +26,9 @@ class AppointmentSchedulingTest extends TestCase
     {
         parent::setUp();
         Storage::fake('documents');
-        \Illuminate\Support\Facades\Http::fake([
-            'generativelanguage.googleapis.com/*' => \Illuminate\Support\Facades\Http::response([
+        config(['services.document_verification.provider' => 'gemini']);
+        Http::fake([
+            'generativelanguage.googleapis.com/*' => Http::response([
                 'candidates' => [['content' => ['parts' => [['text' => json_encode(['is_valid' => true])]]]]],
             ], 200),
         ]);
@@ -70,13 +73,14 @@ class AppointmentSchedulingTest extends TestCase
 
         $this->postJson("/api/applications/{$id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
 
         $this->postJson("/api/applications/{$id}/validation-1");
         $this->postJson("/api/applications/{$id}/validation-2");
 
-        $staff = StaffUser::factory()->create();
+        $application = CreditApplication::findOrFail($id);
+        $staff = StaffUser::factory()->forBranch($application->branch)->create();
         $admin = StaffUser::factory()->admin()->create();
 
         Sanctum::actingAs($staff, ['*']);
@@ -87,7 +91,7 @@ class AppointmentSchedulingTest extends TestCase
 
         Sanctum::actingAs($this->customer, ['*']);
 
-        return CreditApplication::findOrFail($id);
+        return $application->fresh();
     }
 
     public function test_admin_approval_automatically_proposes_the_first_appointment(): void
@@ -103,6 +107,75 @@ class AppointmentSchedulingTest extends TestCase
         $this->assertSame(1, $appointment->attempt_number);
         $this->assertSame($branch->id, $appointment->branch_id);
         $this->assertSame('2026-08-18', $appointment->scheduled_date->toDateString()); // Tuesday
+        $this->assertSame('09:00:00', $appointment->scheduled_time);
+        $this->assertFalse($appointment->is_auto_scheduled_future);
+        Carbon::setTestNow();
+    }
+
+    public function test_automatic_scheduler_clamps_an_explicit_today_hint_to_tomorrow(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00'); // Monday
+        $branch = Branch::factory()->default()->create();
+
+        $slot = app(AppointmentSchedulingService::class)->findNextSlot($branch, Carbon::today());
+
+        $this->assertSame('2026-08-25', $slot['date']);
+        $this->assertSame('09:00:00', $slot['time']);
+        Carbon::setTestNow();
+    }
+
+    public function test_automatic_scheduler_uses_the_configured_application_timezone(): void
+    {
+        $originalTimezone = config('app.timezone');
+
+        try {
+            config(['app.timezone' => 'Africa/Tunis']);
+            // Still Sunday in UTC, but already Monday in the configured business timezone.
+            Carbon::setTestNow(Carbon::parse('2026-08-23 23:30:00', 'UTC'));
+            $branch = Branch::factory()->default()->create();
+
+            $slot = app(AppointmentSchedulingService::class)->findNextSlot($branch);
+
+            $this->assertSame('2026-08-25', $slot['date']);
+        } finally {
+            Carbon::setTestNow();
+            config(['app.timezone' => $originalTimezone]);
+        }
+    }
+
+    public function test_tomorrow_partial_occupancy_uses_first_available_configured_slot(): void
+    {
+        Carbon::setTestNow('2026-08-24 08:00:00'); // Monday
+        $branch = Branch::factory()->default()->create(['daily_capacity' => 4]);
+
+        foreach (['09:00:00', '11:00:00'] as $time) {
+            Appointment::create([
+                'credit_application_id' => CreditApplication::factory()->create()->id,
+                'branch_id' => $branch->id,
+                'attempt_number' => 1,
+                'scheduled_date' => '2026-08-25',
+                'scheduled_time' => $time,
+                'status' => Appointment::STATUS_ACCEPTED,
+            ]);
+        }
+
+        $application = $this->approvedApplication($branch);
+        $appointment = $application->fresh()->latestAppointment();
+
+        $this->assertSame('2026-08-25', $appointment->scheduled_date->toDateString());
+        $this->assertSame('14:00:00', $appointment->scheduled_time);
+        Carbon::setTestNow();
+    }
+
+    public function test_friday_automatic_scheduler_starts_on_monday_even_when_today_is_free(): void
+    {
+        Carbon::setTestNow('2026-08-21 08:00:00'); // Friday
+        $branch = Branch::factory()->default()->create();
+
+        $application = $this->approvedApplication($branch);
+        $appointment = $application->fresh()->latestAppointment();
+
+        $this->assertSame('2026-08-24', $appointment->scheduled_date->toDateString());
         $this->assertSame('09:00:00', $appointment->scheduled_time);
         $this->assertFalse($appointment->is_auto_scheduled_future);
         Carbon::setTestNow();
@@ -149,42 +222,57 @@ class AppointmentSchedulingTest extends TestCase
         $response->assertOk()->assertJsonPath('data.application_status', CreditApplication::STATUS_APPOINTMENT_PROPOSED);
         $second = $application->fresh()->latestAppointment();
         $this->assertSame(2, $second->attempt_number);
+        $this->assertSame(1, $second->reschedule_count);
         $this->assertSame($branch->id, $second->branch_id);
         // A rejected appointment causes the next proposal for this application to advance to the next available slot
         $this->assertSame('11:00:00', $second->scheduled_time);
         Carbon::setTestNow();
     }
 
-    public function test_a_third_rejection_locks_the_application_for_staff(): void
+    public function test_four_successful_reschedules_are_allowed_and_a_fifth_is_rejected_without_consuming_the_current_slot(): void
     {
         $branch = Branch::factory()->default()->create();
         $application = $this->approvedApplication($branch);
 
-        for ($i = 0; $i < Appointment::MAX_ATTEMPTS - 1; $i++) {
-            $this->postJson("/api/applications/{$application->id}/appointment/reject");
+        for ($i = 1; $i <= Appointment::MAX_RESCHEDULES; $i++) {
+            $this->postJson("/api/applications/{$application->id}/appointment/reject")
+                ->assertOk()
+                ->assertJsonPath('data.appointment.reschedule_count', $i)
+                ->assertJsonPath('data.appointment.remaining_reschedules', Appointment::MAX_RESCHEDULES - $i);
         }
+        $current = $application->fresh()->latestAppointment();
         $response = $this->postJson("/api/applications/{$application->id}/appointment/reject");
 
-        $response->assertOk()
-            ->assertJsonPath('data.application_status', CreditApplication::STATUS_APPOINTMENT_LOCKED)
-            ->assertJsonPath('data.appointment', null);
+        $response->assertStatus(409)
+            ->assertJsonPath('error.code', 'APPOINTMENT_RESCHEDULE_LIMIT');
 
         $this->assertSame(Appointment::MAX_ATTEMPTS, $application->fresh()->appointments()->count());
-        $this->assertSame(CreditApplication::STATUS_APPOINTMENT_LOCKED, $application->fresh()->status);
+        $this->assertSame(CreditApplication::STATUS_APPOINTMENT_PROPOSED, $application->fresh()->status);
+        $this->assertSame(Appointment::STATUS_PROPOSED, $current->fresh()->status);
+        $this->assertSame(Appointment::MAX_RESCHEDULES, $current->fresh()->reschedule_count);
+        $this->assertDatabaseHas('audit_logs', [
+            'credit_application_id' => $application->id,
+            'action' => 'credit_application.appointment_reschedule_limit_reached',
+        ]);
+        $this->assertDatabaseHas('audit_logs', [
+            'credit_application_id' => $application->id,
+            'action' => 'credit_application.discussion_escalated',
+        ]);
     }
 
-    public function test_cannot_accept_or_reject_after_the_application_is_locked(): void
+    public function test_customer_can_still_accept_the_current_slot_after_using_all_changes(): void
     {
         $branch = Branch::factory()->default()->create();
         $application = $this->approvedApplication($branch);
 
-        for ($i = 0; $i < Appointment::MAX_ATTEMPTS; $i++) {
-            $this->postJson("/api/applications/{$application->id}/appointment/reject");
+        for ($i = 0; $i < Appointment::MAX_RESCHEDULES; $i++) {
+            $this->postJson("/api/applications/{$application->id}/appointment/reject")->assertOk();
         }
 
         $this->postJson("/api/applications/{$application->id}/appointment/accept")
-            ->assertStatus(409)
-            ->assertJsonPath('error.code', 'APPOINTMENT_ALREADY_DECIDED');
+            ->assertOk()
+            ->assertJsonPath('data.appointment.status', Appointment::STATUS_ACCEPTED)
+            ->assertJsonPath('data.appointment.remaining_reschedules', 0);
     }
 
     /** Test 1: Monday full -> rolls over to Tuesday 09:00 with is_auto_scheduled_future = true. */
@@ -400,18 +488,18 @@ class AppointmentSchedulingTest extends TestCase
             'code_projet' => 'PR-0002', 'identifiant_personne' => 'CL-0002', 'nom_ou_rs' => 'Trabelsi',
             'prenom_ou_dc' => 'Sami', 'type_projet' => 'création', 'objet' => 'Stock initial',
             'adresse' => '12 Rue de la République', 'ville' => $branch->ville,
-            'code_postal' => '1000', 'activite' => 'Commerce', 'description' => "Nouveau magasin.",
+            'code_postal' => '1000', 'activite' => 'Commerce', 'description' => 'Nouveau magasin.',
             'delegation' => 'Bab Bhar', 'localisation' => 'Centre-ville', 'cout' => 15000,
             'investissement_personnel' => 5000, 'financement' => 10000, 'revenus' => 2500, 'depenses' => 1000,
         ]);
         $this->postJson("/api/applications/{$id2}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$id2}/validation-1");
         $this->postJson("/api/applications/{$id2}/validation-2");
 
-        $staff = StaffUser::factory()->create();
+        $staff = StaffUser::factory()->forBranch($branch)->create();
         $admin = StaffUser::factory()->admin()->create();
         Sanctum::actingAs($staff, ['*']);
         $this->postJson("/api/staff/applications/{$id2}/approve");
@@ -468,6 +556,8 @@ class AppointmentSchedulingTest extends TestCase
 
         $this->getJson("/api/applications/{$application->id}/appointment")->assertStatus(403);
         $this->postJson("/api/applications/{$application->id}/appointment/accept")->assertStatus(403);
+        $this->postJson("/api/applications/{$application->id}/appointment/reject")->assertStatus(403);
+        $this->assertSame(0, $application->fresh()->latestAppointment()->reschedule_count);
     }
 
     public function test_no_branch_configured_returns_a_clear_error(): void
@@ -503,15 +593,14 @@ class AppointmentSchedulingTest extends TestCase
         ]);
         $this->postJson("/api/applications/{$id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$id}/validation-1");
         $this->postJson("/api/applications/{$id}/validation-2");
 
-        $staff = StaffUser::factory()->create();
         $admin = StaffUser::factory()->admin()->create();
 
-        Sanctum::actingAs($staff, ['*']);
+        Sanctum::actingAs($admin, ['*']);
         $this->postJson("/api/staff/applications/{$id}/approve")->assertOk();
 
         Sanctum::actingAs($admin, ['*']);
@@ -535,7 +624,7 @@ class AppointmentSchedulingTest extends TestCase
 
     public function test_closest_agency_matching_when_coordinates_are_available(): void
     {
-        $matchingService = app(\App\Services\BranchMatchingService::class);
+        $matchingService = app(BranchMatchingService::class);
 
         $branchTunis = Branch::factory()->create([
             'name' => 'BTS Tunis',

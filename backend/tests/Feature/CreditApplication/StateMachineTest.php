@@ -48,7 +48,7 @@ class StateMachineTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");
@@ -123,22 +123,21 @@ class StateMachineTest extends CreditApplicationTestCase
 
     // ---- machine: illegal transitions -------------------------------------------------
 
-    public function test_machine_allows_forward_jumps_within_the_customer_zone(): void
+    public function test_machine_rejects_forward_jumps_within_the_customer_zone(): void
     {
         $machine = $this->machine();
 
-        // The legacy services moved the status forward monotonically, so a credit save from a
-        // fresh DRAFT (STEP_2) or a project save from DRAFT (STEP_3 then READY) is legal — the
-        // frontend was built against that and ClientStepTest/ProjectStepTest pin it end to end.
-        foreach ([
-            CreditApplication::STATUS_DRAFT => CreditApplication::STATUS_STEP_2_COMPLETED,
-            CreditApplication::STATUS_DRAFT => CreditApplication::STATUS_STEP_3_COMPLETED,
-            CreditApplication::STATUS_STEP_1_COMPLETED => CreditApplication::STATUS_STEP_3_COMPLETED,
-            CreditApplication::STATUS_STEP_2_COMPLETED => CreditApplication::STATUS_READY_FOR_VALIDATION_1,
-        ] as $from => $to) {
-            $this->assertTrue(
+        $jumps = [
+            [CreditApplication::STATUS_DRAFT, CreditApplication::STATUS_STEP_2_COMPLETED],
+            [CreditApplication::STATUS_DRAFT, CreditApplication::STATUS_STEP_3_COMPLETED],
+            [CreditApplication::STATUS_STEP_1_COMPLETED, CreditApplication::STATUS_STEP_3_COMPLETED],
+            [CreditApplication::STATUS_STEP_2_COMPLETED, CreditApplication::STATUS_READY_FOR_VALIDATION_1],
+        ];
+
+        foreach ($jumps as [$from, $to]) {
+            $this->assertFalse(
                 $machine->canTransition($this->applicationAt($from), $to, $this->user),
-                "expected forward jump {$from} → {$to} to be legal",
+                "expected forward jump {$from} → {$to} to be rejected",
             );
         }
     }
@@ -289,8 +288,8 @@ class StateMachineTest extends CreditApplicationTestCase
 
     public function test_staff_rejection_persists_the_reason_and_decided_by(): void
     {
-        $staff = StaffUser::factory()->create();
         $application = $this->submittedApplication();
+        $staff = StaffUser::factory()->forBranch($application->branch)->create();
 
         Sanctum::actingAs($staff, ['*']);
         $this->postJson("/api/staff/applications/{$application->id}/reject", ['reason' => 'Pièce manquante'])
@@ -342,8 +341,8 @@ class StateMachineTest extends CreditApplicationTestCase
 
     public function test_second_staff_approval_is_rejected(): void
     {
-        $staff = StaffUser::factory()->create();
         $application = $this->submittedApplication();
+        $staff = StaffUser::factory()->forBranch($application->branch)->create();
 
         Sanctum::actingAs($staff, ['*']);
         $this->postJson("/api/staff/applications/{$application->id}/approve");
@@ -395,7 +394,7 @@ class StateMachineTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");

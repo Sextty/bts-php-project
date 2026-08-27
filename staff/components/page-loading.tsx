@@ -9,8 +9,8 @@ export function PageLoading() {
       className="flex min-h-screen flex-col items-center justify-center gap-3 bg-muted/30 text-muted-foreground"
     >
       <Loader2 className="size-6 animate-spin text-primary" />
-      <p className="text-sm">Loading…</p>
-      <span className="sr-only">Loading</span>
+      <p className="text-sm">Chargement en cours…</p>
+      <span className="sr-only">Chargement en cours</span>
     </div>
   );
 }
@@ -24,7 +24,7 @@ export function InlineLoading() {
       className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"
     >
       <Loader2 className="size-4 animate-spin" />
-      Loading…
+      Chargement…
     </div>
   );
 }

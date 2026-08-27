@@ -28,7 +28,9 @@ class ApplicationChannel
         }
 
         if ($user instanceof User) {
-            return CreditApplication::where('id', $applicationId)->where('user_id', $user->id)->exists();
+            return ! $user->isBanned()
+                && $user->status === 'active'
+                && CreditApplication::where('id', $applicationId)->where('user_id', $user->id)->exists();
         }
 
         return false;

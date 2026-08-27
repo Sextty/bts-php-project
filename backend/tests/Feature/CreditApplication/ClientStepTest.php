@@ -45,4 +45,36 @@ class ClientStepTest extends CreditApplicationTestCase
         $this->putJson("/api/applications/{$application->id}/client", $this->validClientPayload())
             ->assertStatus(403);
     }
+
+    public function test_cin_must_be_exactly_8_digits(): void
+    {
+        $application = $this->newApplication();
+
+        // 7 digits -> rejected
+        $payload7 = array_merge($this->validClientPayload(), [
+            'type_pid' => 'CIN',
+            'numero_pid' => '1234567',
+        ]);
+        $response7 = $this->putJson("/api/applications/{$application->id}/client", $payload7);
+        $response7->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_ERROR');
+        $this->assertArrayHasKey('numero_pid', $response7->json('error.fields'));
+
+        // Non-digit characters -> rejected
+        $payloadAlpha = array_merge($this->validClientPayload(), [
+            'type_pid' => 'CIN',
+            'numero_pid' => '1234567A',
+        ]);
+        $responseAlpha = $this->putJson("/api/applications/{$application->id}/client", $payloadAlpha);
+        $responseAlpha->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_ERROR');
+        $this->assertArrayHasKey('numero_pid', $responseAlpha->json('error.fields'));
+
+        // 8 digits -> accepted
+        $payload8 = array_merge($this->validClientPayload(), [
+            'type_pid' => 'CIN',
+            'numero_pid' => '08123456',
+        ]);
+        $response8 = $this->putJson("/api/applications/{$application->id}/client", $payload8);
+        $response8->assertOk();
+        $this->assertSame('08123456', $application->fresh()->client->numero_pid);
+    }
 }

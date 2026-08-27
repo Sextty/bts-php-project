@@ -141,7 +141,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply min-w-80 bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;
@@ -149,6 +149,40 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .admin-root {
+    @apply min-h-screen bg-slate-50 text-slate-950;
+    background-image:
+      radial-gradient(circle at 85% -10%, rgb(192 39 45 / 0.08), transparent 28rem),
+      radial-gradient(circle at 25% 110%, rgb(15 23 42 / 0.05), transparent 32rem);
+  }
+
+  .admin-page {
+    @apply mx-auto w-full max-w-7xl space-y-6 px-4 pb-12 pt-20 sm:px-8 sm:pt-8;
+  }
+
+  .admin-page-compact {
+    @apply max-w-5xl;
+  }
+
+  .admin-page-hero {
+    @apply relative overflow-hidden rounded-3xl border border-white/80 bg-white/80 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:p-6;
+  }
+
+  .admin-page-hero::after {
+    content: '';
+    @apply pointer-events-none absolute -right-12 -top-16 size-44 rounded-full bg-red-100/60 blur-3xl;
+  }
+
+  .admin-surface {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.045)];
+  }
+
+  .admin-table-shell {
+    @apply overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.045)];
   }
 }
 

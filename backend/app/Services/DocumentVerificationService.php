@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
-use App\Contracts\GeminiClientInterface;
-use App\Exceptions\Gemini\GeminiApiException;
+use App\Contracts\DocumentAiClientInterface;
+use App\Exceptions\DocumentAi\DocumentAiApiException;
 use App\Models\Client;
 use App\Models\Document;
+use App\Services\DocumentSecurity\DocumentAccessPolicy;
 use App\Services\Gemini\GeminiResponseValidator;
 use App\ValueObjects\DocumentVerificationResult;
 use Illuminate\Support\Facades\Log;
@@ -14,10 +15,10 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Orchestrates the document verification pipeline for one document:
  *
- *   Document → file validation → AI/OCR (Gemini) → structured extraction → confidence →
+ *   Document → file validation → configured AI/OCR provider → structured extraction → confidence →
  *   backend validation → human review when necessary.
  *
- * The Gemini wire protocol lives in GeminiClientInterface (isolated transport); this service
+ * The provider wire protocol lives behind DocumentAiClientInterface; this service
  * owns the domain steps around it: reading and validating the stored file, building the prompt,
  * validating the AI output strictly, and deriving the structured result. Callers decide policy:
  * the AI output is advisory — this service throws on any failure (file missing, provider down,
@@ -28,18 +29,24 @@ class DocumentVerificationService
 {
     public function __construct(
         private readonly DocumentVerificationPromptBuilder $promptBuilder,
-        private readonly GeminiClientInterface $gemini,
+        private readonly DocumentAiClientInterface $ai,
         private readonly GeminiResponseValidator $validator,
+        private readonly DocumentAccessPolicy $documentAccess,
     ) {}
 
-    public function verify(Document $document, Client $client): DocumentVerificationResult
-    {
+    public function verify(
+        Document $document,
+        Client $client,
+        ?int $timeBudgetSeconds = null,
+    ): DocumentVerificationResult {
+        $this->documentAccess->assertDownloadable($document);
         $contents = $this->loadValidatedFile($document);
 
-        $payload = $this->gemini->generateContent(
+        $payload = $this->ai->generateContent(
             $document->mime_type,
             base64_encode($contents),
             $this->promptBuilder->build($document, $client),
+            $timeBudgetSeconds,
         );
 
         // Strict schema validation: malformed AI output is a failed verification, never a
@@ -82,7 +89,7 @@ class DocumentVerificationService
      * the bytes read back from disk — fake uploads in tests store zero-length content while
      * reporting a real size, and the recorded size is what the size cap below already trusts.
      *
-     * @throws \App\Exceptions\Gemini\GeminiApiException
+     * @throws DocumentAiApiException
      */
     private function loadValidatedFile(Document $document): string
     {
@@ -94,20 +101,20 @@ class DocumentVerificationService
                 'disk_path' => $document->disk_path,
             ]);
 
-            throw new GeminiApiException("Document file not found on disk: {$document->disk_path}");
+            throw new DocumentAiApiException("Document file not found on disk: {$document->disk_path}");
         }
 
-        $maxBytes = (int) config('services.gemini.max_payload_bytes', 15 * 1024 * 1024);
+        $maxBytes = (int) config('services.document_verification.max_payload_bytes', 15 * 1024 * 1024);
 
         if ($document->size_bytes > $maxBytes) {
-            throw new GeminiApiException(sprintf(
+            throw new DocumentAiApiException(sprintf(
                 'Document exceeds the AI verification size limit (%d KB).',
                 (int) ($maxBytes / 1024),
             ));
         }
 
         if ($document->size_bytes <= 0) {
-            throw new GeminiApiException('Document file is empty and cannot be verified.');
+            throw new DocumentAiApiException('Document file is empty and cannot be verified.');
         }
 
         return $contents;
@@ -136,7 +143,7 @@ class DocumentVerificationService
                 'type' => $mismatch['severity'] === 'critical' ? 'critical_mismatch' : 'warning_mismatch',
                 'severity' => $mismatch['severity'],
                 'message' => sprintf(
-                    '%s on the document does not match the form (expected "%s", found "%s")',
+                    '%s ne correspond pas au formulaire (attendu « %s », détecté « %s »)',
                     $mismatch['field'],
                     $mismatch['expected'] ?? '—',
                     $mismatch['extracted'] ?? '—',
@@ -148,7 +155,7 @@ class DocumentVerificationService
             $issues[] = [
                 'type' => 'low_confidence',
                 'severity' => 'warning',
-                'message' => 'The AI could not examine the document confidently — a human review is required.',
+                'message' => 'L’IA n’a pas pu analyser ce document avec suffisamment de certitude. Une vérification humaine est requise.',
             ];
         }
 

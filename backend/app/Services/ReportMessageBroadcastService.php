@@ -2,26 +2,23 @@
 
 namespace App\Services;
 
-use App\Events\ReportMessageSent;
 use App\Models\ReportMessage;
-use Illuminate\Support\Facades\Log;
 
 /**
- * Fires ReportMessageSent without letting a dead realtime server break message sending. The
- * message row is already committed by the caller; live push is a nice-to-have, so a Reverb/Pusher
- * outage degrades to "chat still works, no instant delivery" instead of a 500 on every send.
+ * Records realtime intent in the transactional outbox. The worker performs the actual broadcast,
+ * so a Reverb outage is retried and visible without delaying or rolling back the HTTP request.
  */
 class ReportMessageBroadcastService
 {
+    public function __construct(private readonly AsyncOutboxService $outbox) {}
+
     public function send(ReportMessage $message): void
     {
-        try {
-            broadcast(new ReportMessageSent($message));
-        } catch (\Throwable $e) {
-            Log::warning('[report-chat] realtime broadcast failed', [
-                'message_id' => $message->id,
-                'exception' => $e->getMessage(),
-            ]);
-        }
+        $this->outbox->record(
+            AsyncOutboxService::TYPE_REPORT_MESSAGE_BROADCAST,
+            $message,
+            [],
+            'report-message-broadcast-'.$message->id,
+        );
     }
 }

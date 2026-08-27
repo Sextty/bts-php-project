@@ -1,0 +1,39 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+flowchart TB
+    TRIG["push main/master ou pull request"]:::input
+    TRIG --> SEC["Secrets + supply chain<br/>Gitleaks 8.30.1 epingle<br/>SBOM SPDX avec Syft"]:::ci
+    TRIG --> BE["Backend SQLite<br/>Composer audit/validate<br/>Laravel tests + fresh migration"]:::ci
+    TRIG --> MDB["MariaDB 11.4 service<br/>51 migrations + tests schema/securite<br/>tests MariaDB concurrence"]:::ci
+    TRIG --> LOAD["Smoke API synthetique<br/>5 utilisateurs reels + k6<br/>drain queue/outbox + verifier"]:::ci
+    TRIG --> FE["4 portails<br/>npm ci, lint, TypeScript, build<br/>SC: Vitest; npm audit"]:::ci
+    SEC --> GATE{"Tous les jobs requis<br/>reussissent ?"}:::decision
+    BE --> GATE
+    MDB --> GATE
+    LOAD --> GATE
+    FE --> GATE
+    GATE -- Non --> STOP["Echec CI"]:::reject
+    GATE -- Oui --> GREEN["Signal d'integration vert<br/>pas un artefact de production signe"]:::ok
+
+    GAP["F-024: CI ne lance pas actuellement<br/>Playwright isole, upgrade realiste,<br/>restore, Pint ni provenance de release"]:::risk -.-> GREEN
+
+    subgraph DR["Preuve locale backup / restore"]
+        SRC[("MariaDB source isolee")]:::data
+        BAK["backup-mariadb.ps1<br/>dump transactionnel + documents<br/>manifest SHA-256 + comptes"]:::ops
+        DEST["Repertoire de backup date<br/>retention opt-in"]:::data
+        REST["verify-mariadb-restore.ps1<br/>cible stricte bts_restoreverify_<digits>"]:::ops
+        CHECK["SHA-256, comptes, migrations<br/>audit chain, fichiers documentaires"]:::ops
+        DROP["Suppression de la seule base jetable"]:::ok
+        SRC --> BAK --> DEST --> REST --> CHECK --> DROP
+    end
+    PROOF["Exercice Phase 4: PASS<br/>dump 57 179 octets, 2 886 fichiers<br/>backup 39,371 s; restore 3,281 s"]:::evidence --> CHECK
+    LIMIT["Non prouves: sauvegarde chiffree hors site,<br/>retention immuable, RPO/RTO, failover"]:::risk -.-> DEST
+
+    classDef input fill:#E0F2FE,stroke:#0369A1,stroke-width:2px,color:#0C4A6E;
+    classDef ci fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef decision fill:#FFF7ED,stroke:#C2410C,stroke-width:2px,color:#7C2D12;
+    classDef reject fill:#FEE2E2,stroke:#B91C1C,stroke-width:2px,color:#7F1D1D;
+    classDef ok fill:#DCFCE7,stroke:#15803D,stroke-width:2px,color:#14532D;
+    classDef risk fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#881337;
+    classDef data fill:#F8FAFC,stroke:#475569,stroke-width:1.5px,color:#0F172A;
+    classDef ops fill:#ECFEFF,stroke:#0E7490,stroke-width:2px,color:#164E63;
+    classDef evidence fill:#FFFBEB,stroke:#B45309,stroke-width:2px,color:#78350F;

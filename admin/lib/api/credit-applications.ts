@@ -58,6 +58,10 @@ export interface CreditRequestDto {
   type_demande: string;
   code_devise: string;
   montant_global_sollicite: string;
+  montant_eqp?: string | number | null;
+  montant_fdr?: string | number | null;
+  montant_amg?: string | number | null;
+  montant_chp?: string | number | null;
   nombre_credits_sollicites: number;
   unite_depot: string;
 }

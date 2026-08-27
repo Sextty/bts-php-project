@@ -33,6 +33,8 @@ class EnsureStaffUser
         }
 
         if ($user->status !== 'active') {
+            $user->currentAccessToken()?->delete();
+
             throw new ApiException(ApiErrorCode::Forbidden, 'This staff account is suspended.');
         }
 

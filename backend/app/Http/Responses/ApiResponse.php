@@ -21,6 +21,11 @@ final class ApiResponse
         return response()->json(['success' => true, 'data' => $data], 201);
     }
 
+    public static function accepted(mixed $data = null): JsonResponse
+    {
+        return response()->json(['success' => true, 'data' => $data], 202);
+    }
+
     public static function noContent(): JsonResponse
     {
         return response()->json(['success' => true, 'data' => null]);

@@ -1,93 +1,124 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','primaryColor':'#F8FAFC','primaryTextColor':'#0F172A','primaryBorderColor':'#475569','lineColor':'#64748B'}}}%%
 classDiagram
-    direction TB
+    direction LR
 
     class User {
-        +BigInteger id
-        +String email
-        +String phone
+        +id: bigint
+        +email: string
+        +status: string
         +creditApplications()
     }
-
     class StaffUser {
-        +BigInteger id
-        +BigInteger branch_id
-        +String role
-        +branch()
+        +branch_id: bigint?
+        +role: string
+        +hasPermission()
+        +canAccessApplication()
     }
-
-    class CreditApplication {
-        +BigInteger id
-        +BigInteger user_id
-        +String application_number
-        +String status
-        +client()
-        +creditRequest()
-        +project()
-        +documents()
-    }
-
-    class Client {
-        +BigInteger id
-        +String full_name
-        +String cin_number
-    }
-
-    class CreditRequest {
-        +BigInteger id
-        +Decimal requested_amount
-        +String credit_type
-    }
-
-    class Project {
-        +BigInteger id
-        +String title
-        +Decimal total_investment
-    }
-
-    class Document {
-        +BigInteger id
-        +String document_type
-        +Boolean ai_is_valid
-    }
-
     class Branch {
-        +BigInteger id
-        +String code
-        +String name
+        +name: string
+        +daily_capacity: int
+        +slotTimes()
     }
-
+    class CreditApplication {
+        +user_id: bigint
+        +branch_id: bigint?
+        +status: string
+        +submitted_at: datetime?
+        +isLocked()
+        +hasReached()
+        +isReportOpen()
+    }
+    class Client {
+        +code_client: string?
+        +numero_pid: string?
+    }
+    class CreditRequest {
+        +n_demande: string?
+        +montant_global_sollicite: decimal?
+    }
+    class Project {
+        +code_projet: string?
+        +activite: string?
+        +latitude: decimal?
+        +longitude: decimal?
+    }
+    class Document {
+        +document_type: string
+        +disk_path: string
+        +malware_scan_status: string
+        +ai_requires_human_review: bool?
+    }
     class Appointment {
-        +BigInteger id
-        +DateTime appointment_date
-        +String status
+        +attempt_number: int
+        +scheduled_date: date
+        +scheduled_time: time
+        +status: string
+        +MAX_ATTEMPTS = 5
+    }
+    class ReportMessage {
+        +sender_type: string
+        +body: text
+        +attachment_path: string?
+    }
+    class AuditLog {
+        +action: string
+        +previous_hash: string?
+        +integrity_hash: string?
+        +key_version: string?
     }
 
     class CreditApplicationService {
-        +saveStep1Client()
-        +saveStep2Credit()
-        +saveStep3Project()
-        +submitApplication()
+        +create()
+        +saveClient()
+        +saveCreditRequest()
+        +saveProject()
+        +confirmValidationTwoAndLock()
+        +submit()
     }
-
-    class DocumentVerificationService {
-        +verifyDocument()
-        +callGoogleGeminiAI()
+    class CreditApplicationStateMachine {
+        +canTransition()
+        +apply()
     }
-
     class CreditApplicationReviewService {
-        +reviewByStaff()
-        +reviewByAdmin()
+        +staffApprove()
+        +staffReject()
+        +adminApprove()
+        +adminReject()
+    }
+    class AppointmentSchedulingService {
+        +proposeNext()
+        +accept()
+        +reject()
+        +scheduleManual()
+    }
+    class DocumentVerificationService {
+        +verify()
+    }
+    class AuditLogService {
+        +log()
+        +verifyIntegrity()
+    }
+    class AsyncOutboxService {
+        +record()
     }
 
     User "1" --> "*" CreditApplication
-    StaffUser "*" --> "1" Branch
-    CreditApplication "1" --> "1" Client
-    CreditApplication "1" --> "1" CreditRequest
-    CreditApplication "1" --> "1" Project
-    CreditApplication "1" --> "*" Document
-    CreditApplication "*" --> "1" Branch
-    CreditApplication "1" --> "0..1" Appointment
+    StaffUser "*" --> "0..1" Branch
+    CreditApplication "*" --> "0..1" Branch
+    CreditApplication "1" *-- "0..1" Client
+    CreditApplication "1" *-- "0..1" CreditRequest
+    CreditApplication "1" *-- "0..1" Project
+    CreditApplication "1" *-- "*" Document
+    CreditApplication "1" *-- "*" Appointment
+    CreditApplication "1" *-- "*" ReportMessage
+    CreditApplication "1" --> "*" AuditLog
 
     CreditApplicationService ..> CreditApplication
+    CreditApplicationService ..> CreditApplicationStateMachine
+    CreditApplicationReviewService ..> CreditApplicationStateMachine
+    CreditApplicationReviewService ..> AppointmentSchedulingService
+    AppointmentSchedulingService ..> Appointment
     DocumentVerificationService ..> Document
-    CreditApplicationReviewService ..> CreditApplication
+    AuditLogService ..> AuditLog
+    CreditApplicationStateMachine ..> AuditLogService
+    CreditApplicationReviewService ..> AsyncOutboxService

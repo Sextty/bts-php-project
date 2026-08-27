@@ -3,10 +3,10 @@
 namespace App\Services\Notifications;
 
 use App\Contracts\NotificationChannelInterface;
+use App\Exceptions\Notifications\PermanentNotificationDeliveryException;
 use App\Models\AppNotification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Mail\Mailable;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 /**
@@ -18,35 +18,26 @@ class EmailNotificationChannel implements NotificationChannelInterface
 {
     public function canReach(Model $notifiable): bool
     {
-        return method_exists($notifiable, 'email') && $notifiable->email !== null && $notifiable->email !== '';
+        $email = $notifiable->getAttribute('email');
+
+        return is_string($email) && $email !== '';
     }
 
     public function deliver(Model $notifiable, AppNotification $notification): void
     {
         if (! $this->canReach($notifiable)) {
-            Log::debug('[notification] email skipped — recipient has no email address', [
-                'notification_id' => $notification->id,
-            ]);
-
-            return;
+            throw new PermanentNotificationDeliveryException('Recipient has no email address.');
         }
 
-        try {
-            Mail::to($notifiable->email)->send(new class($notification) extends Mailable
+        Mail::to($notifiable->getAttribute('email'))->send(new class($notification) extends Mailable
             {
                 public function __construct(private readonly AppNotification $notification) {}
 
                 public function build(): Mailable
                 {
                     return $this->subject($this->notification->title)
-                        ->html('<p>'.e($this->notification->body).'</p>');
+                        ->html('<p style="white-space:pre-line">'.nl2br(e($this->notification->body)).'</p>');
                 }
             });
-        } catch (\Throwable $e) {
-            Log::warning('[notification] email delivery failed', [
-                'notification_id' => $notification->id,
-                'exception' => $e->getMessage(),
-            ]);
-        }
     }
 }

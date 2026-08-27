@@ -3,6 +3,7 @@
 namespace App\Services\Gemini;
 
 use App\Exceptions\Gemini\GeminiMalformedResponseException;
+use Illuminate\Support\Str;
 
 /**
  * Strict schema validation for Gemini's JSON verdict. The AI output is untrusted input: every
@@ -17,6 +18,8 @@ use App\Exceptions\Gemini\GeminiMalformedResponseException;
  */
 class GeminiResponseValidator
 {
+    private const MAX_COMMENT_CHARS = 180;
+
     private const CONFIDENCE_LEVELS = ['high', 'medium', 'low'];
 
     private const SEVERITY_LEVELS = ['critical', 'warning'];
@@ -103,7 +106,7 @@ class GeminiResponseValidator
         return [
             'is_valid' => $payload['is_valid'],
             'confidence' => $payload['confidence'],
-            'comment' => trim($payload['comment']),
+            'comment' => Str::limit(trim($payload['comment']), self::MAX_COMMENT_CHARS - 3),
             'extracted_fields' => $extractedFields,
             'mismatches' => $mismatches,
         ];

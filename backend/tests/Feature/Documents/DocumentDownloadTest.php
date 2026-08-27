@@ -102,4 +102,27 @@ class DocumentDownloadTest extends CreditApplicationTestCase
         $this->assertSame(0, $application->documents()->count());
         $this->assertEmpty(Storage::disk('documents')->allFiles());
     }
+
+    public function test_infected_document_is_never_downloadable(): void
+    {
+        $application = $this->newApplication();
+        $document = $this->uploadPdf($application);
+        $document->update(['malware_scan_status' => 'infected']);
+
+        $this->get("/api/applications/{$application->id}/documents/{$document->id}")
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'DOCUMENT_NOT_CLEAN');
+    }
+
+    public function test_required_scanner_policy_blocks_legacy_unscanned_download(): void
+    {
+        $application = $this->newApplication();
+        $document = $this->uploadPdf($application);
+        $document->update(['malware_scan_status' => 'unavailable']);
+        config(['credit_documents.malware_scan.mode' => 'required']);
+
+        $this->get("/api/applications/{$application->id}/documents/{$document->id}")
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'DOCUMENT_NOT_CLEAN');
+    }
 }

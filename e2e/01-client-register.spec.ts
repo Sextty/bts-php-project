@@ -21,9 +21,10 @@ test.describe('client auth', () => {
     const creds = uniqueCreds();
 
     await registerCustomer(page, creds);
-    await expect(page.getByText('Welcome back')).toBeVisible();
-    await expect(page.getByText(creds.email)).toBeVisible();
-    await expect(page.getByText('Verified', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Bienvenue sur votre portail BTS Bank/)).toBeVisible();
+    await expect(page.getByText('Vérifié', { exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => sessionStorage.getItem('bts_access_token'))).toBeTruthy();
+    expect(await page.evaluate(() => localStorage.getItem('bts_access_token'))).toBeNull();
 
     saveState({
       customer: creds,
@@ -35,7 +36,7 @@ test.describe('client auth', () => {
     await logoutCustomer(page);
 
     await loginCustomer(page, creds);
-    await expect(page.getByText('Welcome back')).toBeVisible();
+    await expect(page.getByText(/Bienvenue sur votre portail BTS Bank/)).toBeVisible();
 
     await logoutCustomer(page);
     await page.goto(`${CLIENT}/login`);
@@ -44,7 +45,7 @@ test.describe('client auth', () => {
     await page.locator('button[type="submit"]').click();
     await page.waitForURL('**/login/verify-otp', { timeout: 30_000 });
     await page.locator('#otp_code').fill('000000');
-    await page.getByRole('button', { name: 'Log in' }).click();
+    await page.getByRole('button', { name: 'Se connecter' }).click();
     await expect(page.getByText(/incorrect|invalid|wrong/i)).toBeVisible({ timeout: 20_000 });
 
     await page.goto(`${CLIENT}/login`);
@@ -54,7 +55,7 @@ test.describe('client auth', () => {
     await page.waitForURL('**/login/verify-otp', { timeout: 60_000 });
     const realCode = await readOtpForPhone(creds.phone);
     await page.locator('#otp_code').fill(realCode);
-    await page.getByRole('button', { name: 'Log in' }).click();
+    await page.getByRole('button', { name: 'Se connecter' }).click();
     await page.waitForURL('**/dashboard', { timeout: 60_000 });
   });
 });

@@ -20,10 +20,8 @@ use Illuminate\Support\Facades\DB;
  *   - rejects transitions that don't exist in the table (including duplicate same-state calls,
  *     with one deliberate exception: APPOINTMENT_PROPOSED → APPOINTMENT_PROPOSED, which is the
  *     re-proposal cycle after a rejection and is tracked by attempt_number on the new row);
- *   - additionally allows forward jumps within the customer progression chain (e.g. saving the
- *     credit step straight from DRAFT, which the legacy flow tolerated and the frontend may
- *     rely on) — everything else stays table-driven: backward moves, cross-zone moves, actor
- *     violations and terminal-state exits are all rejected;
+ *   - rejects every transition not explicitly present in the table: backward moves, skipped
+ *     customer steps, cross-zone moves, actor violations and terminal-state exits;
  *   - enforces the actor per transition (customer / staff / admin) server-side, as a second
  *     layer beneath the route middleware and policies;
  *   - applies the change inside a transaction, so the status can never be half-written;
@@ -114,26 +112,6 @@ class CreditApplicationStateMachine
         CreditApplication::STATUS_CANCELLED => [],
     ];
 
-    /**
-     * The customer-owned progression chain, in order. The legacy services moved a customer's
-     * status forward monotonically (bumpStatus only ever advanced it), so e.g. saving the
-     * credit step straight from DRAFT was legal and the frontend was built against that.
-     * CANCELLED is deliberately absent — it is never a step on the way anywhere.
-     *
-     * @var list<string>
-     */
-    private const CUSTOMER_PROGRESSION = [
-        CreditApplication::STATUS_DRAFT,
-        CreditApplication::STATUS_STEP_1_COMPLETED,
-        CreditApplication::STATUS_STEP_2_COMPLETED,
-        CreditApplication::STATUS_STEP_3_COMPLETED,
-        CreditApplication::STATUS_READY_FOR_VALIDATION_1,
-        CreditApplication::STATUS_VALIDATION_1_COMPLETED,
-        CreditApplication::STATUS_VALIDATION_2,
-        CreditApplication::STATUS_FINAL_LOCKED,
-        CreditApplication::STATUS_SUBMITTED,
-    ];
-
     public function __construct(private readonly AuditLogService $auditLog) {}
 
     /** Whether $newStatus is a legal next state for this application by this actor. */
@@ -162,26 +140,34 @@ class CreditApplicationStateMachine
         ?string $ip = null,
         ?string $userAgent = null,
     ): CreditApplication {
-        $this->assertTransitionAllowed($application, $newStatus, $actor);
+        return DB::transaction(function () use ($application, $newStatus, $actor, $attributes, $ip, $userAgent) {
+            $lockedApplication = CreditApplication::query()
+                ->whereKey($application->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $previous = $application->status;
+            $this->assertTransitionAllowed($lockedApplication, $newStatus, $actor);
+            $previous = $lockedApplication->status;
+            $changes = array_merge(['status' => $newStatus], $attributes);
+            $lockedApplication->forceFill($changes)->save();
 
-        DB::transaction(function () use ($application, $newStatus, $attributes) {
-            $application->update(array_merge(['status' => $newStatus], $attributes));
-        });
+            // Mandatory evidence is part of the same transaction as the business write.
+            // If chaining/audit persistence fails, the status and all supplied attributes roll back.
+            $this->auditLog->log(
+                'credit_application.status_changed',
+                $actor instanceof StaffUser ? null : $actor,
+                previousState: ['status' => $previous],
+                newState: ['status' => $newStatus],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $lockedApplication,
+                staffUser: $actor instanceof StaffUser ? $actor : null,
+            );
 
-        $this->auditLog->log(
-            'credit_application.status_changed',
-            $actor instanceof StaffUser ? null : $actor,
-            previousState: ['status' => $previous],
-            newState: ['status' => $newStatus],
-            ipAddress: $ip,
-            userAgent: $userAgent,
-            application: $application,
-            staffUser: $actor instanceof StaffUser ? $actor : null,
-        );
+            $application->setRawAttributes($lockedApplication->getAttributes(), true);
 
-        return $application;
+            return $lockedApplication;
+        }, 5);
     }
 
     private function assertTransitionAllowed(CreditApplication $application, string $newStatus, User|StaffUser $actor): void
@@ -205,10 +191,6 @@ class CreditApplicationStateMachine
                 );
             }
         } elseif (! array_key_exists($newStatus, $allowed)) {
-            if ($this->isForwardJump($from, $newStatus, $actor)) {
-                return;
-            }
-
             throw new ApiException(
                 ApiErrorCode::InvalidApplicationStatus,
                 "This application cannot move from the {$from} stage to {$newStatus}.",
@@ -221,7 +203,12 @@ class CreditApplicationStateMachine
         if ($actor instanceof StaffUser) {
             $isAuthorized = false;
             foreach ($allowedRoles as $role) {
-                if ($role === 'staff' || $role === 'admin' && $actor->isAdmin()) {
+                if ($role === 'staff' && $this->isOperationalStaff($actor)) {
+                    $isAuthorized = true;
+                    break;
+                }
+
+                if ($role === 'admin' && $actor->isAtLeast('admin')) {
                     $isAuthorized = true;
                     break;
                 }
@@ -243,24 +230,13 @@ class CreditApplicationStateMachine
         }
     }
 
-    private function actorType(User|StaffUser $actor): string
+    private function isOperationalStaff(StaffUser $actor): bool
     {
-        return $actor instanceof StaffUser ? $actor->role : 'customer';
-    }
-
-    /**
-     * A status change deeper into CUSTOMER_PROGRESSION, made by a customer: the legacy
-     * monotonic bump, still legal so out-of-order section saves keep working.
-     */
-    private function isForwardJump(string $from, string $newStatus, User|StaffUser $actor): bool
-    {
-        if ($this->actorType($actor) !== 'customer') {
-            return false;
-        }
-
-        $fromIndex = array_search($from, self::CUSTOMER_PROGRESSION, true);
-        $toIndex = array_search($newStatus, self::CUSTOMER_PROGRESSION, true);
-
-        return $fromIndex !== false && $toIndex !== false && $toIndex > $fromIndex;
+        return $actor->isSuperuser() || in_array($actor->role, [
+            'staff',
+            'credit_officer',
+            'senior_staff',
+            'branch_manager',
+        ], true);
     }
 }

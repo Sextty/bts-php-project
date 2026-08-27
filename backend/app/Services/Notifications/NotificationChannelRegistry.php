@@ -10,7 +10,7 @@ use InvalidArgumentException;
  * class. DeliverNotificationJob resolves channels by name through here, so the job stays a dumb
  * fan-out worker and channels stay swappable in one place. The 'in-app' channel is deliberately
  * NOT in this registry — it is delivered synchronously by NotificationService via the
- * NotificationSent broadcast event (ShouldBroadcastNow, same pattern as ReportMessageSent), so
+ * NotificationSent queued broadcast event (same pattern as ReportMessageSent), so
  * realtime notifications never wait on a queue worker.
  */
 class NotificationChannelRegistry

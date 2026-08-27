@@ -2,7 +2,7 @@
 
 import React, { useState, useId } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Calculator, Sparkles, TrendingUp, Info } from 'lucide-react';
+import { ArrowRight, Calculator, Sparkles } from 'lucide-react';
 
 const PRESET_AMOUNTS = [10000, 25000, 50000, 100000];
 const PRESET_DURATIONS = [12, 24, 36, 60, 84];

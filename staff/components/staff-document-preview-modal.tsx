@@ -46,24 +46,23 @@ export function StaffDocumentPreviewModal({
   const [activeTab, setActiveTab] = useState<'preview' | 'ai'>('preview');
 
   useEffect(() => {
-    if (!open || !document) {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-        setObjectUrl(null);
-      }
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!open || !document) return;
 
     let isMounted = true;
-    setLoading(true);
-    setError(null);
+    let generatedUrl: string | null = null;
+
+    queueMicrotask(() => {
+      if (isMounted) {
+        setLoading(true);
+        setError(null);
+      }
+    });
 
     downloadStaffDocumentBlob(applicationId, document.id)
       .then(({ blob, mimeType }) => {
         if (!isMounted) return;
         const url = URL.createObjectURL(blob);
+        generatedUrl = url;
         setObjectUrl(url);
         setDetectedMime(mimeType || document.mime_type || 'application/octet-stream');
       })
@@ -77,6 +76,7 @@ export function StaffDocumentPreviewModal({
 
     return () => {
       isMounted = false;
+      if (generatedUrl) URL.revokeObjectURL(generatedUrl);
     };
   }, [open, document, applicationId]);
 
@@ -280,7 +280,7 @@ export function StaffDocumentPreviewModal({
                   </div>
                   {document?.ai_confidence && (
                     <span className="text-[11px] font-semibold text-[#3D5166]">
-                      Niveau de confiance : <strong className="uppercase text-[#0C1825]">{document.ai_confidence}</strong>
+                      Niveau de confiance : <strong className="uppercase text-[#0C1825]">{confidenceLabel(document.ai_confidence)}</strong>
                     </span>
                   )}
                 </div>
@@ -352,4 +352,11 @@ export function StaffDocumentPreviewModal({
       </DialogContent>
     </Dialog>
   );
+}
+
+function confidenceLabel(confidence: 'high' | 'medium' | 'low' | null): string {
+  if (confidence === 'high') return 'élevée';
+  if (confidence === 'medium') return 'moyenne';
+  if (confidence === 'low') return 'faible';
+  return 'non définie';
 }

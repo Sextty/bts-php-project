@@ -16,9 +16,21 @@ class CreditApplicationController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $applications = $request->user()->creditApplications()->with(['creditRequest', 'appointments.branch'])->latest()->get();
+        $perPage = max(1, min((int) $request->query('per_page', 25), 100));
+        $applications = $request->user()->creditApplications()
+            ->with(['creditRequest', 'appointments.branch'])
+            ->latest('id')
+            ->paginate($perPage);
 
-        return ApiResponse::ok(['applications' => CreditApplicationResource::collection($applications)]);
+        return ApiResponse::ok([
+            'applications' => CreditApplicationResource::collection($applications->items()),
+            'meta' => [
+                'current_page' => $applications->currentPage(),
+                'last_page' => $applications->lastPage(),
+                'per_page' => $applications->perPage(),
+                'total' => $applications->total(),
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse

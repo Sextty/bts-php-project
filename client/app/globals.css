@@ -152,9 +152,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    min-width: 320px;
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
+  }
+  ::selection {
+    background: rgba(192, 39, 45, 0.16);
+    color: #0c1825;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -261,7 +267,8 @@
   font-size: 0.875rem;
   padding: 10px 24px;
   border: 1.5px solid var(--color-bts-red);
-  border-radius: 6px;
+  min-height: 42px;
+  border-radius: 12px;
   cursor: pointer;
   text-decoration: none;
   letter-spacing: 0.01em;
@@ -271,7 +278,8 @@
 .btn-red:hover {
   background: var(--color-bts-red-dark);
   border-color: var(--color-bts-red-dark);
-  box-shadow: 0 4px 12px rgba(192, 39, 45, 0.25);
+  box-shadow: 0 8px 22px rgba(192, 39, 45, 0.24);
+  transform: translateY(-1px);
 }
 .btn-red:active {
   transform: scale(0.98);
@@ -288,7 +296,8 @@
   font-size: 0.875rem;
   padding: 10px 24px;
   border: 1.5px solid var(--color-rule);
-  border-radius: 6px;
+  min-height: 42px;
+  border-radius: 12px;
   cursor: pointer;
   text-decoration: none;
   letter-spacing: 0.01em;
@@ -299,6 +308,7 @@
   border-color: var(--color-bts-red);
   color: var(--color-bts-red);
   background: var(--color-bts-red-tint);
+  box-shadow: 0 6px 18px rgba(12, 24, 37, 0.07);
 }
 .btn-outline:active {
   transform: scale(0.98);
@@ -315,7 +325,8 @@
   font-size: 0.875rem;
   padding: 10px 24px;
   border: 1.5px solid rgba(255, 255, 255, 0.4);
-  border-radius: 6px;
+  min-height: 42px;
+  border-radius: 12px;
   cursor: pointer;
   text-decoration: none;
   transition: all 0.2s;
@@ -327,7 +338,65 @@
 
 .figma-card {
   background: #ffffff;
-  border: 1.5px solid var(--color-rule);
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(12, 24, 37, 0.04);
+  border: 1px solid #dfe5eb;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(12, 24, 37, 0.055), 0 1px 2px rgba(12, 24, 37, 0.04);
+}
+
+.portal-shell {
+  min-height: 100vh;
+  color: #1e2d3d;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(192, 39, 45, 0.055), transparent 28rem),
+    linear-gradient(180deg, #f9fafb 0%, #f3f6f8 100%);
+}
+
+.portal-shell main {
+  animation: portal-enter 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.portal-panel {
+  border: 1px solid #dfe5eb;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 32px rgba(12, 24, 37, 0.06);
+}
+
+.portal-page-heading {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dfe5eb;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #ffffff 65%, #fdf2f2 100%);
+  box-shadow: 0 10px 32px rgba(12, 24, 37, 0.055);
+}
+
+.portal-form-control {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid #d5dde5;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #0c1825;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.portal-form-control:focus {
+  border-color: #c0272d;
+  background: #fff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(192, 39, 45, 0.12);
+}
+
+@keyframes portal-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 640px) {
+  .figma-card,
+  .portal-panel,
+  .portal-page-heading {
+    border-radius: 15px;
+  }
 }

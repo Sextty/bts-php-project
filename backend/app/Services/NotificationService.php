@@ -2,13 +2,13 @@
 
 namespace App\Services;
 
-use App\Events\NotificationSent;
-use App\Jobs\DeliverNotificationJob;
 use App\Models\AppNotification;
+use App\Models\NotificationDelivery;
 use App\Models\StaffUser;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The single entry point for creating notifications. Every notification lifecycle hook in the
@@ -26,23 +26,27 @@ use Illuminate\Support\Facades\Log;
  */
 class NotificationService
 {
+    public function __construct(private readonly AsyncOutboxService $outbox) {}
+
     public function notifyUser(User $user, string $type, string $title, string $body, array $data = [], ?string $dedupeKey = null): ?AppNotification
     {
-        $notification = $this->persist($user, $type, $title, $body, $data, $dedupeKey);
+        return $this->persistAndPlan($user, $type, $title, $body, $data, $dedupeKey);
+    }
 
-        if ($notification === null) {
-            return null;
-        }
-
-        $this->dispatchDeliveries($notification, $type);
-
-        return $notification;
+    /** Persist one durable audience intent; recipient fan-out happens in a worker after commit. */
+    public function queueStaffAudience(Model $aggregate, string $type, string $title, string $body, array $data = [], ?string $dedupeKey = null): void
+    {
+        $this->outbox->record(
+            AsyncOutboxService::TYPE_STAFF_AUDIENCE_NOTIFICATION,
+            $aggregate,
+            compact('type', 'title', 'body', 'data', 'dedupeKey'),
+            'staff-audience-'.($dedupeKey ?? $aggregate->getMorphClass().'-'.$aggregate->getKey().'-'.$type),
+        );
     }
 
     /**
-     * Notify every active staff member. Branch filtering is deliberately NOT applied here: the
-     * staff list is small and the application routing data is displayed in the payload, letting
-     * the frontend filter; a branch-scoped list would silently miss cross-branch admins.
+     * Notify active authorized staff. Application-scoped notifications go only to the matching
+     * branch plus global admin/security roles; unassigned operational staff receive nothing.
      *
      * @return list<AppNotification>
      */
@@ -50,17 +54,26 @@ class NotificationService
     {
         $created = [];
 
-        foreach (StaffUser::where('status', 'active')->get() as $staff) {
-            $notification = $this->persist($staff, $type, $title, $body, $data, $dedupeKey);
+        $recipients = StaffUser::query()->where('status', 'active');
 
-            if ($notification !== null) {
-                $created[] = $notification;
-            }
+        if (isset($data['branch_id']) && is_numeric($data['branch_id'])) {
+            $branchId = (int) $data['branch_id'];
+            $recipients->where(function ($query) use ($branchId) {
+                $query->where('branch_id', $branchId)
+                    ->orWhereIn('role', ['admin', 'super_admin', 'security']);
+            });
         }
 
-        foreach ($created as $notification) {
-            $this->dispatchDeliveries($notification, $type);
-        }
+        $recipients->select(['id', 'first_name', 'last_name', 'email', 'role', 'status', 'branch_id'])
+            ->chunkById(200, function ($staffMembers) use (&$created, $type, $title, $body, $data, $dedupeKey): void {
+                foreach ($staffMembers as $staff) {
+                    $notification = $this->persistAndPlan($staff, $type, $title, $body, $data, $dedupeKey);
+
+                    if ($notification !== null) {
+                        $created[] = $notification;
+                    }
+                }
+            });
 
         return $created;
     }
@@ -70,21 +83,19 @@ class NotificationService
     {
         $created = [];
 
-        foreach (StaffUser::where('status', 'active')->get() as $staff) {
-            if (! $staff->isAtLeast('admin')) {
-                continue;
-            }
+        StaffUser::query()
+            ->where('status', 'active')
+            ->whereIn('role', ['admin', 'super_admin'])
+            ->select(['id', 'first_name', 'last_name', 'email', 'role', 'status', 'branch_id'])
+            ->chunkById(200, function ($staffMembers) use (&$created, $type, $title, $body, $data, $dedupeKey): void {
+                foreach ($staffMembers as $staff) {
+                    $notification = $this->persistAndPlan($staff, $type, $title, $body, $data, $dedupeKey);
 
-            $notification = $this->persist($staff, $type, $title, $body, $data, $dedupeKey);
-
-            if ($notification !== null) {
-                $created[] = $notification;
-            }
-        }
-
-        foreach ($created as $notification) {
-            $this->dispatchDeliveries($notification, $type);
-        }
+                    if ($notification !== null) {
+                        $created[] = $notification;
+                    }
+                }
+            });
 
         return $created;
     }
@@ -103,15 +114,38 @@ class NotificationService
             }
         }
 
-        return AppNotification::create([
-            'notifiable_type' => $notifiable->getMorphClass(),
-            'notifiable_id' => $notifiable->getKey(),
-            'type' => $type,
-            'title' => $title,
-            'body' => $body,
-            'data' => $data,
-            'dedupe_key' => $dedupeKey,
-        ]);
+        try {
+            return AppNotification::create([
+                'notifiable_type' => $notifiable->getMorphClass(),
+                'notifiable_id' => $notifiable->getKey(),
+                'type' => $type,
+                'title' => $title,
+                'body' => $body,
+                'data' => $data,
+                'dedupe_key' => $dedupeKey,
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            if ($dedupeKey !== null) {
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
+    private function persistAndPlan(Model $notifiable, string $type, string $title, string $body, array $data, ?string $dedupeKey): ?AppNotification
+    {
+        return DB::transaction(function () use ($notifiable, $type, $title, $body, $data, $dedupeKey) {
+            $notification = $this->persist($notifiable, $type, $title, $body, $data, $dedupeKey);
+
+            if ($notification === null) {
+                return null;
+            }
+
+            $this->planDeliveries($notification, $type);
+
+            return $notification;
+        });
     }
 
     /**
@@ -126,25 +160,27 @@ class NotificationService
         return $channels[$type] ?? ['in-app'];
     }
 
-    private function dispatchDeliveries(AppNotification $notification, string $type): void
+    private function planDeliveries(AppNotification $notification, string $type): void
     {
         foreach ($this->channelsFor($type) as $channel) {
             if ($channel === 'in-app') {
-                // In-app delivery = broadcast the already-persisted row over the socket.
-                // A dead realtime server (Reverb/Pusher down) must not roll back the
-                // business transaction that already committed the notification row.
-                // Same pattern as ReportMessageBroadcastService.
-                try {
-                    NotificationSent::dispatch($notification);
-                } catch (\Throwable $e) {
-                    Log::warning('[notification] realtime broadcast failed', [
-                        'notification_id' => $notification->id,
-                        'type' => $type,
-                        'exception' => $e->getMessage(),
-                    ]);
-                }
+                $this->outbox->record(
+                    AsyncOutboxService::TYPE_NOTIFICATION_BROADCAST,
+                    $notification,
+                    [],
+                    'notification-broadcast-'.$notification->id,
+                );
             } else {
-                DeliverNotificationJob::dispatch($notification->id, $channel);
+                NotificationDelivery::query()->firstOrCreate(
+                    ['app_notification_id' => $notification->id, 'channel' => $channel],
+                    ['status' => NotificationDelivery::STATUS_PENDING, 'attempts' => 0],
+                );
+                $this->outbox->record(
+                    AsyncOutboxService::TYPE_NOTIFICATION_DELIVERY,
+                    $notification,
+                    ['channel' => $channel],
+                    'notification-delivery-'.$notification->id.'-'.$channel,
+                );
             }
         }
     }

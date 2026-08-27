@@ -9,7 +9,6 @@ import {
   User,
   ArrowRight,
   PlusCircle,
-  Shield,
 } from 'lucide-react';
 
 interface QuickAction {

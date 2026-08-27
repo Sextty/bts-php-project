@@ -20,10 +20,22 @@ class ReportMessage extends Model
         'staff_user_id',
         'body',
         'attachment_path',
+        'attachment_disk',
         'attachment_name',
         'attachment_type',
         'attachment_size',
+        'malware_scan_status',
+        'malware_signature',
+        'malware_scanned_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'attachment_size' => 'integer',
+            'malware_scanned_at' => 'datetime',
+        ];
+    }
 
     public function hasAttachment(): bool
     {

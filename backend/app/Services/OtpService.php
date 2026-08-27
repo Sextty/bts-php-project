@@ -70,22 +70,28 @@ class OtpService
         $channel = config('services.sms.provider') === 'email' ? 'email' : 'sms';
 
         DB::transaction(function () use ($user, $purpose, $code, $ttlMinutes, $channel) {
-            // Invalidate every prior unconsumed code for this user+purpose — a fix versus the
-            // platform being replaced, which left old codes independently valid.
-            OtpCode::query()
-                ->where('user_id', $user->id)
-                ->where('purpose', $purpose)
-                ->whereNull('consumed_at')
-                ->update(['consumed_at' => now()]);
+            // Serialize only challenges for the same customer. Updating a non-existent
+            // user/purpose range before INSERT used to take an InnoDB supremum gap lock, so
+            // simultaneous logins for different users could deadlock on an empty otp_codes
+            // table. Locking the exact parent first, then inserting before invalidating older
+            // rows preserves one-active-code semantics without the cross-user gap-lock cycle.
+            User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
 
-            OtpCode::create([
+            $otp = OtpCode::create([
                 'user_id' => $user->id,
                 'code_hash' => Hash::make($code),
                 'purpose' => $purpose,
                 'channel' => $channel,
                 'expires_at' => now()->addMinutes($ttlMinutes),
             ]);
-        });
+
+            OtpCode::query()
+                ->where('user_id', $user->id)
+                ->where('purpose', $purpose)
+                ->where('id', '!=', $otp->id)
+                ->whereNull('consumed_at')
+                ->update(['consumed_at' => now()]);
+        }, 5);
 
         $message = new OtpMessage(
             code: $code,

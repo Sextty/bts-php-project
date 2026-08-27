@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -30,7 +30,7 @@ export default function StaffApplicationDetailPage() {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchApplication = useCallback(async (showLoading = false) => {
     if (!getStaffToken()) {
       router.replace('/login');
       return;
@@ -39,11 +39,32 @@ export default function StaffApplicationDetailPage() {
       router.replace('/dashboard');
       return;
     }
-    getStaffApplication(applicationId)
-      .then(({ application }) => setApplication(application))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Impossible de charger ce dossier.'))
-      .finally(() => setLoading(false));
+    if (showLoading) setLoading(true);
+    try {
+      const result = await getStaffApplication(applicationId);
+      setApplication(result.application);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Impossible de charger ce dossier.');
+    } finally {
+      setLoading(false);
+    }
   }, [applicationId, router]);
+
+  useEffect(() => {
+    queueMicrotask(() => void fetchApplication(true));
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchApplication();
+    };
+    const interval = window.setInterval(refresh, 10_000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [fetchApplication]);
 
   async function handleApprove() {
     setError(null);
@@ -88,9 +109,9 @@ export default function StaffApplicationDetailPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="staff-page text-[#1E2D3D]">
         <StaffHeader role={role} />
-        <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-10 space-y-4">
+        <main id="main" className="staff-main max-w-4xl space-y-4">
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D5166] hover:text-[#0C1825]"
@@ -105,9 +126,9 @@ export default function StaffApplicationDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="staff-page text-[#1E2D3D]">
       <StaffHeader role={role} />
-      <main id="main" className="mx-auto max-w-5xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
+      <main id="main" className="staff-main max-w-6xl space-y-6">
         <Link
           href="/dashboard"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#3D5166] hover:text-[#0C1825]"

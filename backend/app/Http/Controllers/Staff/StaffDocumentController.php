@@ -9,6 +9,7 @@ use App\Models\CreditApplication;
 use App\Models\Document;
 use App\Models\StaffUser;
 use App\Services\DocumentStorage\DocumentStorage;
+use App\Services\DocumentSecurity\DocumentAccessPolicy;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -36,7 +37,10 @@ class StaffDocumentController extends Controller
         CreditApplication::STATUS_REJECTED,
     ];
 
-    public function __construct(private readonly DocumentStorage $storage) {}
+    public function __construct(
+        private readonly DocumentStorage $storage,
+        private readonly DocumentAccessPolicy $documentAccess,
+    ) {}
 
     public function download(Request $request, CreditApplication $application, Document $document): BinaryFileResponse|StreamedResponse
     {
@@ -49,6 +53,8 @@ class StaffDocumentController extends Controller
         if ($document->credit_application_id !== $application->id || $document->trashed()) {
             throw new ApiException(ApiErrorCode::DocumentNotFound);
         }
+
+        $this->documentAccess->assertDownloadable($document);
 
         return $this->storage->response(
             $document->disk_path,

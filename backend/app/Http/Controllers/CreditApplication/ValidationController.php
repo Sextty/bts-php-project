@@ -36,7 +36,7 @@ class ValidationController extends Controller
             // per-document `errors` payload, which the single-code envelope doesn't fit.
             return response()->json([
                 'success' => false,
-                'error' => ['code' => 'VALIDATION_1_FAILED', 'message' => 'Validation failed.', 'errors' => $errors, 'request_id' => $request->attributes->get('request_id')],
+                'error' => ['code' => 'VALIDATION_1_FAILED', 'message' => 'Certains éléments du dossier doivent être corrigés.', 'errors' => $errors, 'request_id' => $request->attributes->get('request_id')],
             ], 422);
         }
 

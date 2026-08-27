@@ -35,16 +35,6 @@ abstract class BaseDocumentStorage implements DocumentStorage
         $sniffed = $this->sniffMimeType($file);
         $extension = $this->extensionForMimeType($sniffed);
 
-        // Inconclusive sniff (zero-filled/empty or undetermined content) is not a rejection:
-        // finfo returns application/x-empty for genuinely empty files, and some binary
-        // formats it can't classify fall through as application/octet-stream. In that case we
-        // fall back to the client-declared MIME — which the request layer already validated
-        // against `mimes:` — rather than fail valid uploads. The stored name is still a
-        // server-generated UUID, so nothing client-supplied ever reaches the disk path.
-        if ($extension === null && in_array($sniffed, ['application/octet-stream', 'application/x-empty', 'inode/x-empty'], true)) {
-            $extension = $this->extensionForMimeType(strtolower($file->getMimeType()));
-        }
-
         if ($extension === null) {
             throw ValidationException::withMessages([
                 'file' => 'The file type ('.$sniffed.') is not allowed.',

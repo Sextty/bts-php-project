@@ -3,7 +3,6 @@
 namespace Tests\Feature\CreditApplication;
 
 use App\Models\CreditApplication;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 class ValidationFlowTest extends CreditApplicationTestCase
@@ -28,8 +27,25 @@ class ValidationFlowTest extends CreditApplicationTestCase
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
 
-        $response->assertStatus(422)->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_1_FAILED')
+            ->assertJsonPath('error.errors.0', 'Document manquant : ajoutez au moins un justificatif avant de lancer la vérification.');
         $this->assertSame(CreditApplication::STATUS_READY_FOR_VALIDATION_1, $application->fresh()->status);
+    }
+
+    public function test_validation_1_allows_no_document_only_when_explicitly_configured(): void
+    {
+        config()->set('credit_documents.require_at_least_one_for_validation', false);
+
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        $this->assertSame(CreditApplication::STATUS_VALIDATION_1_COMPLETED, $application->fresh()->status);
+        $this->assertSame(0, $application->documents()->count());
     }
 
     public function test_validation_1_passes_once_the_required_cin_document_is_uploaded(): void
@@ -38,7 +54,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
@@ -67,7 +83,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
 
@@ -96,7 +112,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");
@@ -113,7 +129,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
 
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin2.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin2.pdf', 500),
         ])->assertStatus(403);
     }
 
@@ -132,7 +148,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'cin',
-            'file' => UploadedFile::fake()->create('cin.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('cin.pdf', 500),
         ]);
         $this->postJson("/api/applications/{$application->id}/validation-1");
         $this->postJson("/api/applications/{$application->id}/validation-2");
@@ -153,7 +169,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'fdr',
-            'file' => UploadedFile::fake()->create('facture_fdr.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('facture_fdr.pdf', 500),
         ])->assertCreated();
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
@@ -166,7 +182,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'amg',
-            'file' => UploadedFile::fake()->create('devis_travaux_amg.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('devis_travaux_amg.pdf', 500),
         ])->assertCreated();
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
@@ -179,7 +195,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'chp',
-            'file' => UploadedFile::fake()->create('proforma_cheptel_chp.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('proforma_cheptel_chp.pdf', 500),
         ])->assertCreated();
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");
@@ -192,7 +208,7 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->completeAllThreeSteps($application);
         $this->postJson("/api/applications/{$application->id}/documents", [
             'document_type' => 'epr',
-            'file' => UploadedFile::fake()->create('devis_materiel_epr.pdf', 500, 'application/pdf'),
+            'file' => $this->fakePdf('devis_materiel_epr.pdf', 500),
         ])->assertCreated();
 
         $response = $this->postJson("/api/applications/{$application->id}/validation-1");

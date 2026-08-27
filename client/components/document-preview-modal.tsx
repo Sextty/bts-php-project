@@ -32,24 +32,22 @@ export function DocumentPreviewModal({
   const [detectedMime, setDetectedMime] = useState<string>('');
 
   useEffect(() => {
-    if (!open || !document) {
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-        setObjectUrl(null);
-      }
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!open || !document) return;
 
     let isMounted = true;
-    setLoading(true);
-    setError(null);
+    let generatedUrl: string | null = null;
+    queueMicrotask(() => {
+      if (isMounted) {
+        setLoading(true);
+        setError(null);
+      }
+    });
 
     downloadDocumentBlob(applicationId, document.id)
       .then(({ blob, mimeType }) => {
         if (!isMounted) return;
         const url = URL.createObjectURL(blob);
+        generatedUrl = url;
         setObjectUrl(url);
         setDetectedMime(mimeType || document.mime_type || 'application/octet-stream');
       })
@@ -63,6 +61,7 @@ export function DocumentPreviewModal({
 
     return () => {
       isMounted = false;
+      if (generatedUrl) URL.revokeObjectURL(generatedUrl);
     };
   }, [open, document, applicationId]);
 

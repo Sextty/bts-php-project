@@ -1,5 +1,7 @@
 <?php
 
+use App\Logging\SanitizeLogContextProcessor;
+use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -60,7 +62,7 @@ return [
 
         'single' => [
             'driver' => 'single',
-            'path' => storage_path('logs/laravel.log'),
+            'path' => env('LOG_SINGLE_PATH', storage_path('logs/laravel.log')),
             'level' => env('LOG_LEVEL', 'debug'),
             'replace_placeholders' => true,
         ],
@@ -71,6 +73,22 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
+        ],
+
+        // Opt-in structured production channel. Set LOG_CHANNEL=stack and LOG_STACK=json in a
+        // supervised environment. Local development remains human-readable on `single`.
+        'json' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_LEVEL', 'info'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => env('LOG_JSON_PATH', storage_path('logs/bts.jsonl')),
+            ],
+            'formatter' => JsonFormatter::class,
+            'processors' => [
+                PsrLogMessageProcessor::class,
+                SanitizeLogContextProcessor::class,
+            ],
         ],
 
         'slack' => [

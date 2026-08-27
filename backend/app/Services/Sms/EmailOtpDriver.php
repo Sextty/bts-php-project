@@ -63,8 +63,8 @@ class EmailOtpDriver implements SmsProviderInterface
             return SmsDeliveryResult::success();
         } catch (\Throwable $e) {
             Log::error('[otp:email] send failed', [
-                'email' => $user->email,
-                'exception' => $e->getMessage(),
+                'user_id' => $user->id,
+                'exception_class' => $e::class,
             ]);
 
             return SmsDeliveryResult::failure($e->getMessage(), transient: true);

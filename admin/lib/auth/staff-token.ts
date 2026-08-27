@@ -7,14 +7,22 @@ const STORAGE_KEY = 'bts_staff_access_token';
  */
 export function getStaffToken(): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(STORAGE_KEY);
+  const current = window.sessionStorage.getItem(STORAGE_KEY);
+  if (current) return current;
+  const legacy = window.localStorage.getItem(STORAGE_KEY);
+  if (legacy) window.sessionStorage.setItem(STORAGE_KEY, legacy);
+  window.localStorage.removeItem(STORAGE_KEY);
+  return legacy;
 }
 
 export function setStaffToken(token: string): void {
-  window.localStorage.setItem(STORAGE_KEY, token);
+  window.sessionStorage.setItem(STORAGE_KEY, token);
+  window.localStorage.removeItem(STORAGE_KEY);
 }
 
 export function clearStaffToken(): void {
+  window.sessionStorage.removeItem(STORAGE_KEY);
+  window.sessionStorage.removeItem(ROLE_STORAGE_KEY);
   window.localStorage.removeItem(STORAGE_KEY);
   window.localStorage.removeItem(ROLE_STORAGE_KEY);
 }
@@ -26,11 +34,17 @@ const ROLE_STORAGE_KEY = 'bts_staff_role';
  * don't already know the role (e.g. a shared "Reports" screen reachable by both staff and admin)
  * read it back for display only, never for authorization (the backend enforces that).
  */
-export function getStaffRole(): 'staff' | 'admin' | null {
+export function getStaffRole(): 'staff' | 'admin' | 'super_admin' | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(ROLE_STORAGE_KEY) as 'staff' | 'admin' | null;
+  const current = window.sessionStorage.getItem(ROLE_STORAGE_KEY);
+  if (current) return current as 'staff' | 'admin' | 'super_admin';
+  const legacy = window.localStorage.getItem(ROLE_STORAGE_KEY);
+  if (legacy) window.sessionStorage.setItem(ROLE_STORAGE_KEY, legacy);
+  window.localStorage.removeItem(ROLE_STORAGE_KEY);
+  return legacy as 'staff' | 'admin' | 'super_admin' | null;
 }
 
-export function setStaffRole(role: 'staff' | 'admin'): void {
-  window.localStorage.setItem(ROLE_STORAGE_KEY, role);
+export function setStaffRole(role: 'staff' | 'admin' | 'super_admin'): void {
+  window.sessionStorage.setItem(ROLE_STORAGE_KEY, role);
+  window.localStorage.removeItem(ROLE_STORAGE_KEY);
 }

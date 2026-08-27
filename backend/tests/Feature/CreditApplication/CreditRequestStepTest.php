@@ -78,4 +78,46 @@ class CreditRequestStepTest extends CreditApplicationTestCase
         $this->putJson("/api/applications/{$application->id}/credit", $payload)
             ->assertStatus(422);
     }
+
+    public function test_valid_financing_breakdown_is_accepted_and_persisted(): void
+    {
+        $application = $this->newApplication();
+        $this->completeStep1($application);
+
+        $payload = array_merge($this->validCreditRequestPayload(), [
+            'montant_global_sollicite' => 50000,
+            'montant_eqp' => 25000,
+            'montant_fdr' => 15000,
+            'montant_amg' => 10000,
+            'montant_chp' => 0,
+        ]);
+
+        $response = $this->putJson("/api/applications/{$application->id}/credit", $payload);
+        $response->assertOk();
+
+        $cr = $application->fresh()->creditRequest;
+        $this->assertEquals(25000, (float) $cr->montant_eqp);
+        $this->assertEquals(15000, (float) $cr->montant_fdr);
+        $this->assertEquals(10000, (float) $cr->montant_amg);
+        $this->assertEquals(0, (float) $cr->montant_chp);
+    }
+
+    public function test_mismatched_financing_breakdown_sum_is_rejected(): void
+    {
+        $application = $this->newApplication();
+        $this->completeStep1($application);
+
+        $payload = array_merge($this->validCreditRequestPayload(), [
+            'montant_global_sollicite' => 50000,
+            'montant_eqp' => 20000,
+            'montant_fdr' => 10000,
+            'montant_amg' => 10000,
+            'montant_chp' => 0, // Sum = 40,000 != 50,000
+        ]);
+
+        $response = $this->putJson("/api/applications/{$application->id}/credit", $payload);
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+        $this->assertArrayHasKey('montant_global_sollicite', $response->json('error.fields'));
+    }
 }

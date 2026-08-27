@@ -15,8 +15,8 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * In-app delivery of a persisted notification over the Reverb WebSocket. ShouldBroadcastNow,
- * mirroring ReportMessageSent, so it fires synchronously without a queue worker running.
+ * In-app delivery of a persisted notification over the Reverb WebSocket. Broadcasting is queued
+ * after the database commit so realtime availability never adds latency to banking requests.
  *
  * Channel selection mirrors server-side channel authorization (routes/channels.php): a customer
  * gets their own private-user.{id} channel, a staff member gets private-staff, an admin gets

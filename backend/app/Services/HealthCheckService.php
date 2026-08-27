@@ -38,7 +38,12 @@ class HealthCheckService
         $cache = $this->checkCache();
         $redis = $this->checkRedis();
         $storage = $this->checkStorage();
+        $disk = $this->checkDiskSpace();
         $queue = $this->checkQueue($database, $redis);
+        $worker = $this->checkHeartbeat('worker');
+        $scheduler = $this->checkHeartbeat('scheduler');
+        $failedJobs = $this->checkFailedJobs($database);
+        $outbox = $this->checkAsyncOutbox($database);
         $reverb = $this->checkReverb();
 
         $checks = [
@@ -46,7 +51,12 @@ class HealthCheckService
             'cache' => $cache,
             'redis' => $redis,
             'storage' => $storage,
+            'disk_space' => $disk,
             'queue' => $queue,
+            'queue_worker' => $worker,
+            'scheduler' => $scheduler,
+            'failed_jobs' => $failedJobs,
+            'async_outbox' => $outbox,
             'reverb' => $reverb,
         ];
 
@@ -129,6 +139,31 @@ class HealthCheckService
     }
 
     /**
+     * `disk_free_space` is safe and inexpensive for local storage. Never expose an internal
+     * path or the exact capacity publicly; operators only need a stable sufficient/low signal.
+     */
+    private function checkDiskSpace(): array
+    {
+        if (config('filesystems.disks.documents.driver', 'local') !== 'local') {
+            return ['ok' => true, 'detail' => 'provider_managed'];
+        }
+
+        try {
+            $root = (string) config('filesystems.disks.documents.root', storage_path('app/documents'));
+            $freeBytes = @disk_free_space($root);
+            if ($freeBytes === false) {
+                return ['ok' => false, 'detail' => 'unavailable'];
+            }
+
+            $ok = $freeBytes >= (int) config('operations.storage.min_free_bytes', 1_073_741_824);
+
+            return ['ok' => $ok, 'detail' => $ok ? 'sufficient' : 'low'];
+        } catch (\Throwable) {
+            return ['ok' => false, 'detail' => 'unavailable'];
+        }
+    }
+
+    /**
      * The queue's backing store is either the database or Redis — whichever it is,
      * the dedicated probe above already covered it. A 'database' queue with a dead
      * DB is a failed database check, not a separate failure.
@@ -144,10 +179,110 @@ class HealthCheckService
             'redis' => $redis['ok']
                 ? ['ok' => true, 'detail' => 'redis backing store ok']
                 : ['ok' => false, 'detail' => 'redis unreachable'],
+            'database' => $this->checkDatabaseQueue($database),
             default => $database['ok']
-                ? ['ok' => true, 'detail' => 'database backing store ok']
-                : ['ok' => false, 'detail' => 'database unreachable'],
+                ? ['ok' => true, 'detail' => 'backing store ok']
+                : ['ok' => false, 'detail' => 'backing store unreachable'],
         };
+    }
+
+    /** @param array{ok: bool, detail: string} $database */
+    private function checkDatabaseQueue(array $database): array
+    {
+        if (! $database['ok']) {
+            return ['ok' => false, 'detail' => 'database unreachable'];
+        }
+
+        try {
+            $table = config('queue.connections.database.table', 'jobs');
+            $now = now()->timestamp;
+            $readyQuery = DB::table($table)->whereNull('reserved_at')->where('available_at', '<=', $now);
+            $ready = (clone $readyQuery)->count();
+            $delayed = DB::table($table)->whereNull('reserved_at')->where('available_at', '>', $now)->count();
+            $reserved = DB::table($table)->whereNotNull('reserved_at')->count();
+            $oldest = (clone $readyQuery)->min('created_at');
+            $oldestSeconds = $oldest === null ? 0 : max(0, $now - (int) $oldest);
+            $maxReady = (int) config('operations.queue.max_ready', 10_000);
+            $maxAge = (int) config('operations.queue.max_ready_age_seconds', 300);
+            $ok = $ready <= $maxReady && $oldestSeconds <= $maxAge;
+
+            return [
+                'ok' => $ok,
+                'detail' => "database queue; ready={$ready}; delayed={$delayed}; reserved={$reserved}; oldest_ready_seconds={$oldestSeconds}",
+            ];
+        } catch (\Throwable) {
+            return ['ok' => false, 'detail' => 'queue table unreachable'];
+        }
+    }
+
+    /** @return array{ok: bool, detail: string} */
+    private function checkHeartbeat(string $component): array
+    {
+        $settings = (array) config("operations.{$component}", []);
+        if (! ($settings['required'] ?? false)) {
+            return ['ok' => true, 'detail' => 'not required'];
+        }
+
+        try {
+            $timestamp = Cache::get((string) ($settings['heartbeat_key'] ?? ''));
+            if (! is_numeric($timestamp)) {
+                return ['ok' => false, 'detail' => 'heartbeat missing'];
+            }
+
+            $age = max(0, now()->timestamp - (int) $timestamp);
+            $ok = $age <= (int) ($settings['max_age_seconds'] ?? 120);
+
+            return ['ok' => $ok, 'detail' => $ok ? "heartbeat ok; age_seconds={$age}" : "heartbeat stale; age_seconds={$age}"];
+        } catch (\Throwable) {
+            return ['ok' => false, 'detail' => 'heartbeat unavailable'];
+        }
+    }
+
+    /** @param array{ok: bool, detail: string} $database */
+    private function checkFailedJobs(array $database): array
+    {
+        if (! $database['ok']) {
+            return ['ok' => false, 'detail' => 'database unreachable'];
+        }
+
+        try {
+            $count = DB::table(config('queue.failed.table', 'failed_jobs'))->count();
+            $maximum = (int) config('operations.queue.max_failed', 0);
+
+            return ['ok' => $count <= $maximum, 'detail' => "count={$count}; allowed={$maximum}"];
+        } catch (\Throwable) {
+            return ['ok' => false, 'detail' => 'failed-job store unreachable'];
+        }
+    }
+
+    /** @param array{ok: bool, detail: string} $database */
+    private function checkAsyncOutbox(array $database): array
+    {
+        if (! $database['ok']) {
+            return ['ok' => false, 'detail' => 'database unreachable'];
+        }
+
+        try {
+            $table = DB::table('async_outbox_events');
+            $pending = (clone $table)->whereIn('status', ['pending', 'retrying'])->count();
+            $processing = (clone $table)->where('status', 'processing')->count();
+            $failed = (clone $table)->where('status', 'failed')->count();
+            $oldest = (clone $table)->whereIn('status', ['pending', 'retrying'])->min('created_at');
+            $averageDelay = (int) round((float) ((clone $table)->where('status', 'processed')->avg('queue_delay_ms') ?? 0));
+            $averageRuntime = (int) round((float) ((clone $table)->where('status', 'processed')->avg('runtime_ms') ?? 0));
+            $oldestSeconds = $oldest ? max(0, now()->diffInSeconds($oldest)) : 0;
+            $maxPending = (int) config('operations.outbox.max_pending', 10_000);
+            $maxAge = (int) config('operations.outbox.max_pending_age_seconds', 300);
+            $maxFailed = (int) config('operations.outbox.max_failed', 0);
+            $ok = $pending <= $maxPending && $oldestSeconds <= $maxAge && $failed <= $maxFailed;
+
+            return [
+                'ok' => $ok,
+                'detail' => "pending={$pending}; processing={$processing}; failed={$failed}; oldest_pending_seconds={$oldestSeconds}; avg_queue_delay_ms={$averageDelay}; avg_runtime_ms={$averageRuntime}",
+            ];
+        } catch (\Throwable) {
+            return ['ok' => false, 'detail' => 'outbox table unreachable'];
+        }
     }
 
     /** @return array{ok: bool, detail: string} */
@@ -160,16 +295,18 @@ class HealthCheckService
             return ['ok' => true, 'detail' => 'not configured'];
         }
 
-        $appId = env('REVERB_APP_ID');
-        $host = env('REVERB_HOST', '127.0.0.1');
-        $port = (int) env('REVERB_PORT', 8080);
+        $connection = (array) config('broadcasting.connections.reverb', []);
+        $appId = $connection['app_id'] ?? null;
+        $options = (array) ($connection['options'] ?? []);
+        $host = $options['host'] ?? '127.0.0.1';
+        $port = (int) ($options['port'] ?? 8080);
 
         if ($appId === null || $appId === '') {
             return ['ok' => true, 'detail' => 'not configured'];
         }
 
         try {
-            $socket = @fsockopen((string) $host, $port, $errno, $errstr, 2.0);
+            $socket = @fsockopen((string) $host, $port, $errno, $errstr, (float) config('operations.reverb.timeout_seconds', 2));
 
             if ($socket === false) {
                 return ['ok' => false, 'detail' => 'unreachable'];

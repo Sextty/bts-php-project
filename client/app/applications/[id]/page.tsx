@@ -26,7 +26,6 @@ import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
 import {
   getApplication,
   type CreditApplicationDto,
-  type DocumentDto,
 } from '@/lib/api/credit-applications';
 import { statusLabel, statusDescription, statusPhase } from '@/lib/status-labels';
 import { ApiError } from '@/lib/api/client';
@@ -77,7 +76,7 @@ export default function ApplicationDetailPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-10 space-y-4">
           <BackLink href="/applications" label="Retour à mes demandes" />
@@ -88,8 +87,7 @@ export default function ApplicationDetailPage() {
   }
 
   const status = application.status;
-  const phase = statusPhase(status);
-  const isTerminal = phase === 'terminal';
+  const latestAppointment = application.latest_appointment;
   const canEdit =
     status === 'DRAFT' ||
     status === 'STEP_1_COMPLETED' ||
@@ -117,7 +115,7 @@ export default function ApplicationDetailPage() {
     : 'Non renseigné';
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-5xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href="/applications" label="Retour à mes demandes" />
@@ -219,10 +217,34 @@ export default function ApplicationDetailPage() {
               <AlertCircle className="size-4 text-red-600" />
               <span>Dossier non retenu</span>
             </div>
-            {application.rejection_reason && (
-              <p>Motif : {application.rejection_reason}</p>
-            )}
+            <p>La décision finale est disponible dans votre espace client. Aucun rendez-vous n&apos;a été créé pour ce dossier.</p>
           </div>
+        )}
+
+        {latestAppointment && ['APPOINTMENT_PROPOSED', 'APPOINTMENT_CONFIRMED'].includes(status) && (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950" aria-labelledby="accepted-title">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" aria-hidden="true" />
+              <div className="min-w-0">
+                <h2 id="accepted-title" className="text-sm font-bold">Demande acceptée</h2>
+                <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                  <div>
+                    <dt className="font-semibold text-emerald-800">Agence</dt>
+                    <dd className="mt-1">{latestAppointment.branch?.name ?? application.branch?.name ?? 'Agence BTS affectée'}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-emerald-800">Date</dt>
+                    <dd className="mt-1 capitalize">{new Date(latestAppointment.scheduled_date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-emerald-800">Heure</dt>
+                    <dd className="mt-1 font-mono">{latestAppointment.scheduled_time.slice(0, 5)}</dd>
+                  </div>
+                </dl>
+                <p className="mt-3 font-semibold">{latestAppointment.remaining_reschedules} changement{latestAppointment.remaining_reschedules === 1 ? '' : 's'} restant{latestAppointment.remaining_reschedules === 1 ? '' : 's'}</p>
+              </div>
+            </div>
+          </section>
         )}
 
         {status === 'SUBMITTED' && (

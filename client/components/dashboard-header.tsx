@@ -41,12 +41,6 @@ export function DashboardHeader({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (initialUser) setUser(initialUser);
-    if (typeof initialAppsCount === 'number') setAppsCount(initialAppsCount);
-    if (typeof initialUnreadCount === 'number') setUnreadCount(initialUnreadCount);
-  }, [initialUser, initialAppsCount, initialUnreadCount]);
-
-  useEffect(() => {
     // If not passed as props, lazily load current user & counts if token exists
     if (!getToken()) return;
 
@@ -126,12 +120,12 @@ export function DashboardHeader({
   ];
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[#E0E4E9] bg-white/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-8">
+    <header className="sticky top-0 z-40 border-b border-[#dce3ea] bg-white/90 shadow-[0_1px_18px_rgba(12,24,37,0.05)] backdrop-blur-xl">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-8">
         {/* 1. Brand Logo */}
         <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center gap-3 shrink-0">
-            <Logo size={32} />
+          <Link href="/dashboard" className="flex shrink-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0272d] focus-visible:ring-offset-2">
+            <Logo size={34} />
             <div className="flex items-baseline gap-1.5">
               <span className="font-display text-lg font-semibold tracking-tight text-[#0C1825]">
                 BTS <span className="font-sans font-normal text-xs text-[#3D5166]">Bank</span>
@@ -151,10 +145,10 @@ export function DashboardHeader({
                   key={link.href}
                   href={link.href}
                   className={cn(
-                    'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors',
+                    'flex h-9 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0272d]/40',
                     link.active
-                      ? 'bg-[#FDF2F2] text-[#C0272D]'
-                      : 'text-[#3D5166] hover:bg-[#F4F6F8] hover:text-[#0C1825]'
+                      ? 'bg-[#fdf2f2] text-[#a82027] shadow-[inset_0_0_0_1px_#fecaca]'
+                      : 'text-[#536579] hover:bg-[#f3f6f8] hover:text-[#0c1825]'
                   )}
                 >
                   <Icon className="size-3.5" />
@@ -170,7 +164,7 @@ export function DashboardHeader({
           {/* Notification Bell */}
           <Link
             href="/dashboard#notifications"
-            className="relative p-2 text-[#3D5166] hover:text-[#0C1825] rounded-lg hover:bg-[#F4F6F8] transition-colors"
+            className="relative flex size-10 items-center justify-center rounded-xl text-[#536579] transition hover:bg-[#f3f6f8] hover:text-[#0c1825] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0272d]/40"
             aria-label="Notifications"
           >
             <Bell className="size-4.5" />
@@ -185,7 +179,7 @@ export function DashboardHeader({
           {user && (
             <Link
               href="/profile"
-              className="hidden sm:flex items-center gap-2.5 pl-2 border-l border-[#E0E4E9] hover:opacity-80 transition-opacity"
+              className="hidden items-center gap-2.5 rounded-xl border-l border-[#e0e4e9] px-2 py-1 transition hover:bg-[#f7f8fa] sm:flex"
             >
               <div className="size-8 rounded-full bg-[#FDF2F2] text-[#C0272D] font-bold text-xs flex items-center justify-center border border-[#FECACA]">
                 {initials}
@@ -208,8 +202,7 @@ export function DashboardHeader({
           {/* Logout button */}
           <button
             type="button"
-            className="btn-outline text-xs hidden sm:inline-flex items-center gap-1.5"
-            style={{ padding: '6px 14px' }}
+            className="hidden h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs sm:inline-flex"
             onClick={handleLogout}
             aria-label="Se déconnecter"
           >
@@ -220,9 +213,10 @@ export function DashboardHeader({
           {/* Mobile Menu Toggle */}
           <button
             type="button"
-            className="p-2 text-[#3D5166] md:hidden"
+            className="flex size-10 items-center justify-center rounded-xl text-[#3D5166] transition hover:bg-[#f3f6f8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c0272d]/40 md:hidden"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Menu"
+            aria-label={mobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
           </button>
@@ -232,7 +226,7 @@ export function DashboardHeader({
       {/* 4. Mobile Menu Drawer */}
       {mobileMenuOpen && (
         <nav
-          className="border-t border-[#E0E4E9] bg-white px-4 pb-4 pt-3 md:hidden space-y-1"
+          className="space-y-1 border-t border-[#E0E4E9] bg-white px-4 pb-4 pt-3 shadow-lg md:hidden"
           aria-label="Navigation mobile"
         >
           {navLinks.map((link) => {

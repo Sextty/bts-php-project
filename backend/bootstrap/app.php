@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\ApiException;
+use App\Http\Middleware\ApiSecurityHeadersMiddleware;
 use App\Http\Middleware\EnsureCustomerUser;
 use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureStaffRole;
@@ -51,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Correlation ID for every /api request: X-Request-Id header in, X-Request-Id
         // header + log context + error-envelope field out (see RequestIdMiddleware).
         $middleware->api(prepend: [
+            ApiSecurityHeadersMiddleware::class,
             RequestIdMiddleware::class,
         ]);
     })
@@ -160,5 +162,22 @@ return Application::configure(basePath: dirname(__DIR__))
                 'success' => false,
                 'error' => ['code' => 'DUPLICATE_ENTRY', 'message' => 'A record with this value already exists.', 'request_id' => $request->attributes->get('request_id')],
             ], 422);
+        });
+
+        // Never expose stack traces, SQL, paths or exception messages in API responses, even
+        // when APP_DEBUG was accidentally left enabled. Laravel still reports the exception.
+        $exceptions->render(function (Throwable $e, Request $request) {
+            if (! $request->is('api/*')) {
+                return null;
+            }
+
+            return response()->json([
+                'success' => false,
+                'error' => [
+                    'code' => 'INTERNAL_ERROR',
+                    'message' => 'An unexpected error occurred.',
+                    'request_id' => $request->attributes->get('request_id'),
+                ],
+            ], 500);
         });
     })->create();

@@ -6,8 +6,8 @@ import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { ApplicationStepper } from '@/components/application-stepper';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
-import { DocumentsUploadCard } from '@/components/documents-upload-card';
-import { ArrowRight, Lock, CreditCard } from 'lucide-react';
+import { CreditFinancingUploadCard } from '@/components/credit-financing-upload-card';
+import { ArrowRight, Lock } from 'lucide-react';
 import {
   getApplication,
   updateCreditRequest,
@@ -29,6 +29,10 @@ const EMPTY_FORM: FormState = {
   type_demande: '',
   code_devise: 'TND',
   montant_global_sollicite: '',
+  montant_eqp: '',
+  montant_fdr: '',
+  montant_amg: '',
+  montant_chp: '',
   nombre_credits_sollicites: 1,
   unite_depot: 'Portail en ligne',
 };
@@ -57,6 +61,10 @@ export default function CreditRequestStepPage() {
           setForm({
             ...EMPTY_FORM,
             ...application.credit_request,
+            montant_eqp: application.credit_request.montant_eqp ?? '',
+            montant_fdr: application.credit_request.montant_fdr ?? '',
+            montant_amg: application.credit_request.montant_amg ?? '',
+            montant_chp: application.credit_request.montant_chp ?? '',
             unite_depot: application.credit_request.unite_depot || application.branch?.name || EMPTY_FORM.unite_depot,
           });
         } else {
@@ -76,11 +84,28 @@ export default function CreditRequestStepPage() {
     event.preventDefault();
     setError(null);
     setFieldErrors(null);
+
+    const globalVal = Number(form.montant_global_sollicite) || 0;
+    const eqp = Number(form.montant_eqp) || 0;
+    const fdr = Number(form.montant_fdr) || 0;
+    const amg = Number(form.montant_amg) || 0;
+    const chp = Number(form.montant_chp) || 0;
+    const sum = eqp + fdr + amg + chp;
+
+    if (sum > 0 && Math.abs(sum - globalVal) > 0.01) {
+      setError(`La somme des financements détaillés (${sum.toLocaleString('fr-FR', { minimumFractionDigits: 3 })} TND) doit être exactement égale au montant global sollicité (${globalVal.toLocaleString('fr-FR', { minimumFractionDigits: 3 })} TND).`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { application } = await updateCreditRequest(applicationId, {
         ...form,
         montant_global_sollicite: String(form.montant_global_sollicite),
+        montant_eqp: form.montant_eqp ? String(form.montant_eqp) : '0',
+        montant_fdr: form.montant_fdr ? String(form.montant_fdr) : '0',
+        montant_amg: form.montant_amg ? String(form.montant_amg) : '0',
+        montant_chp: form.montant_chp ? String(form.montant_chp) : '0',
         nombre_credits_sollicites: Number(form.nombre_credits_sollicites),
       });
       setApplication(application);
@@ -101,7 +126,7 @@ export default function CreditRequestStepPage() {
 
   if (!application) {
     return (
-      <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+      <div className="portal-shell">
         <DashboardHeader />
         <main id="main" className="mx-auto max-w-3xl px-4 py-10 space-y-4">
           <BackLink href="/applications" label="Retour à mes demandes" />
@@ -114,7 +139,7 @@ export default function CreditRequestStepPage() {
   const locked = application.is_locked;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-[#1E2D3D]">
+    <div className="portal-shell">
       <DashboardHeader />
       <main id="main" className="mx-auto max-w-4xl px-4 sm:px-8 py-8 sm:py-10 space-y-6">
         <BackLink href={`/applications/${applicationId}`} label="Retour aux détails" />
@@ -144,21 +169,22 @@ export default function CreditRequestStepPage() {
         {/* ── Stepper ── */}
         <ApplicationStepper status={application.status} current="credit" />
 
-        {/* ── Form Card ── */}
-        <div className="figma-card p-6 sm:p-8 bg-white space-y-6">
-          <div className="border-b border-[#E0E4E9] pb-4">
-            <p className="overline">Étape 2 sur 5</p>
-            <h1 className="font-display text-2xl font-light text-[#0C1825]">
-              Demande de Crédit & Montants
-            </h1>
-            <p className="text-xs text-[#3D5166] mt-1">
-              Précisez le type de financement souhaité et le montant global sollicité auprès de la BTS Bank.
-            </p>
-          </div>
+        {/* ── Form Container wrapping Form & Document Upload ── */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── 1. Form Card : Demande de Crédit & Montants ── */}
+          <div className="figma-card p-6 sm:p-8 bg-white space-y-6 shadow-xs border border-[#E0E4E9]">
+            <div className="border-b border-[#E0E4E9] pb-4">
+              <p className="overline">Étape 2 sur 5</p>
+              <h1 className="font-display text-2xl font-light text-[#0C1825]">
+                Demande de Crédit & Montants
+              </h1>
+              <p className="text-xs text-[#3D5166] mt-1">
+                Précisez le type de financement souhaité et le montant global sollicité auprès de la BTS Bank.
+              </p>
+            </div>
 
-          <ErrorAlert message={error} fields={fieldErrors} />
+            <ErrorAlert message={error} fields={fieldErrors} />
 
-          <form onSubmit={handleSubmit} className="space-y-6">
             <fieldset disabled={locked} className="space-y-5 disabled:opacity-60">
               {/* Type de Demande, Origine & Unité de dépôt */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -173,130 +199,94 @@ export default function CreditRequestStepPage() {
                     className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
                     required
                   >
-                    <option value="">Sélectionner un produit</option>
-                    <option value="Crédit Professionnel">Crédit Professionnel</option>
-                    <option value="Crédit d'investissement">Crédit d&apos;investissement</option>
-                    <option value="Crédit de gestion">Crédit de gestion</option>
-                    <option value="Fonds de roulement">Fonds de roulement</option>
-                    <option value="Crédit TIC">Crédit TIC (Technologies de l&apos;information)</option>
-                    <option value="Finance Islamique">Finance Islamique (Mourabaha / Ijara)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label htmlFor="origine" className="text-xs font-semibold text-[#0C1825]">
-                    Origine du dossier <span className="text-[#C0272D]">*</span>
-                  </label>
-                  <select
-                    id="origine"
-                    value={form.origine}
-                    onChange={(e) => setForm({ ...form, origine: e.target.value })}
-                    className="w-full text-xs font-medium bg-[#F4F6F8] border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
-                    required
-                  >
                     <option value="">Sélectionner</option>
-                    <option value="Portail en ligne">Portail en ligne BTS</option>
-                    <option value="Agence">Dépôt en agence</option>
-                    <option value="Partenaire">Organisme partenaire (APII, ODESYPANO)</option>
+                    <option value="crédit de création">Crédit de Création d&apos;Entreprise</option>
+                    <option value="crédit d'extension">Crédit d&apos;Extension d&apos;Activité</option>
+                    <option value="crédit de roulement">Fonds de Roulement</option>
+                    <option value="crédit personnel">Crédit Professionnel / Artisan</option>
                   </select>
                 </div>
-
                 <FormInput
-                  label="Unité de dépôt"
+                  label="Origine du dossier"
+                  id="origine"
+                  value={form.origine}
+                  onChange={(v) => setForm({ ...form, origine: v })}
+                  placeholder="Portail en ligne"
+                  required
+                />
+                <FormInput
+                  label="Unité de dépôt (Agence BTS)"
                   id="unite_depot"
                   value={form.unite_depot}
                   onChange={(v) => setForm({ ...form, unite_depot: v })}
-                  placeholder="Ex: Agence Tunis, Portail en ligne..."
+                  placeholder="Agence Tunis Belvédère"
                   required
                 />
               </div>
 
-              {/* Montant, Devise & Nombre de crédits */}
-              <div className="p-4 bg-[#FDF2F2] border border-[#FECACA] rounded-xl space-y-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-[#C0272D]">
-                  Paramètres Financiers
+              {/* Nom / Raison Sociale & Prénom */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormInput
+                  label="Nom ou Raison Sociale"
+                  id="nom_ou_rs"
+                  value={form.nom_ou_rs}
+                  onChange={(v) => setForm({ ...form, nom_ou_rs: v })}
+                  placeholder="Ben Salah ou Société Exemple"
+                  required
+                />
+                <FormInput
+                  label="Prénom ou Dénomination Complémentaire"
+                  id="prenom_ou_dc"
+                  value={form.prenom_ou_dc}
+                  onChange={(v) => setForm({ ...form, prenom_ou_dc: v })}
+                  placeholder="Karim ou SARL"
+                  required
+                />
+              </div>
+
+              {/* Paramètres Financiers */}
+              <div className="p-4 bg-[#F4F6F8] rounded-xl border border-[#E0E4E9] space-y-4">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0C1825]">
+                  Montant Global Sollicité &amp; Paramètres
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-1.5">
-                    <label htmlFor="montant_global_sollicite" className="text-xs font-semibold text-[#0C1825]">
-                      Montant global sollicité <span className="text-[#C0272D]">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="montant_global_sollicite"
-                        type="number"
-                        min="1000"
-                        step="500"
-                        required
-                        placeholder="Ex: 50000"
-                        value={form.montant_global_sollicite}
-                        onChange={(e) => setForm({ ...form, montant_global_sollicite: e.target.value })}
-                        className="w-full text-sm font-bold font-mono bg-white border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#3D5166]">
-                        {form.code_devise || 'TND'}
-                      </span>
-                    </div>
-                  </div>
-
+                  <FormInput
+                    label="Montant Total Demandé"
+                    id="montant_global_sollicite"
+                    type="number"
+                    value={String(form.montant_global_sollicite)}
+                    onChange={(v) => setForm({ ...form, montant_global_sollicite: v })}
+                    placeholder="Ex: 50000"
+                    required
+                  />
                   <div className="space-y-1.5">
                     <label htmlFor="code_devise" className="text-xs font-semibold text-[#0C1825]">
                       Devise <span className="text-[#C0272D]">*</span>
                     </label>
-                    <select
-                      id="code_devise"
-                      value={form.code_devise}
-                      onChange={(e) => setForm({ ...form, code_devise: e.target.value })}
-                      className="w-full text-xs font-medium bg-white border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
-                      required
-                    >
-                      <option value="TND">TND (Dinar Tunisien)</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label htmlFor="nombre_credits_sollicites" className="text-xs font-semibold text-[#0C1825]">
-                      Nombre de crédits sollicités <span className="text-[#C0272D]">*</span>
-                    </label>
                     <input
-                      id="nombre_credits_sollicites"
-                      type="number"
-                      min="1"
-                      max="10"
-                      required
-                      value={form.nombre_credits_sollicites}
-                      onChange={(e) => setForm({ ...form, nombre_credits_sollicites: Number(e.target.value) || 1 })}
-                      className="w-full text-xs font-medium bg-white border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] focus:outline-none focus:border-[#C0272D] focus:ring-1 focus:ring-[#C0272D]"
+                      id="code_devise"
+                      type="text"
+                      value={form.code_devise}
+                      disabled
+                      className="w-full text-xs font-mono font-bold bg-gray-100 border border-[#E0E4E9] rounded-lg px-3 py-2.5 text-[#0C1825] cursor-not-allowed"
                     />
                   </div>
+                  <FormInput
+                    label="Nombre de crédits sollicités"
+                    id="nombre_credits_sollicites"
+                    type="number"
+                    value={String(form.nombre_credits_sollicites)}
+                    onChange={(v) => setForm({ ...form, nombre_credits_sollicites: Number(v) })}
+                    required
+                  />
                 </div>
               </div>
 
-              {/* Raison Sociale / Nom Entreprise */}
+              {/* Dates de Dépôt & Réception */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormInput
-                  label="Nom ou Raison Sociale de l'activité"
-                  id="nom_ou_rs"
-                  value={form.nom_ou_rs}
-                  onChange={(v) => setForm({ ...form, nom_ou_rs: v })}
-                  placeholder="Ex: Société Tunisienne de Services"
-                  required
-                />
-                <FormInput
-                  label="Prénom ou Dénomination Commerciale"
-                  id="prenom_ou_dc"
-                  value={form.prenom_ou_dc}
-                  onChange={(v) => setForm({ ...form, prenom_ou_dc: v })}
-                  placeholder="Ex: Enseigne commerciale"
-                  required
-                />
-              </div>
-
-              {/* Dates de dépôt et réception */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <FormInput
-                  label="Date de dépôt du dossier"
+                  label="Date de dépôt"
                   id="date_depot"
                   type="date"
                   value={form.date_depot}
@@ -313,29 +303,48 @@ export default function CreditRequestStepPage() {
                 />
               </div>
             </fieldset>
+          </div>
 
-            {!locked && (
-              <div className="pt-4 border-t border-[#E0E4E9] flex justify-end">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="btn-red text-xs inline-flex items-center gap-2 shadow-xs"
-                  style={{ padding: '10px 24px' }}
-                >
-                  <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Descriptif du projet'}</span>
-                  <ArrowRight className="size-4" />
-                </button>
+          {/* ── 2. Credit Financing Breakdown & Document Upload Section (EQP, FDR, AMG, CHP, Devis, Contrat de Location) ── */}
+          <CreditFinancingUploadCard
+            applicationId={applicationId}
+            documents={application.documents}
+            locked={locked}
+            breakdown={{
+              montant_global_sollicite: form.montant_global_sollicite,
+              montant_eqp: form.montant_eqp ?? '',
+              montant_fdr: form.montant_fdr ?? '',
+              montant_amg: form.montant_amg ?? '',
+              montant_chp: form.montant_chp ?? '',
+            }}
+            onChangeBreakdown={(newBreakdown) =>
+              setForm((prev) => ({
+                ...prev,
+                ...(newBreakdown.montant_eqp !== undefined ? { montant_eqp: String(newBreakdown.montant_eqp) } : {}),
+                ...(newBreakdown.montant_fdr !== undefined ? { montant_fdr: String(newBreakdown.montant_fdr) } : {}),
+                ...(newBreakdown.montant_amg !== undefined ? { montant_amg: String(newBreakdown.montant_amg) } : {}),
+                ...(newBreakdown.montant_chp !== undefined ? { montant_chp: String(newBreakdown.montant_chp) } : {}),
+              }))
+            }
+          />
+
+          {/* ── 3. Bottom Action Bar (PLACED AFTER THE JOINDRE ZONE) ── */}
+          {!locked && (
+            <div className="figma-card p-4 sm:p-5 bg-white border border-[#E0E4E9] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs rounded-xl">
+              <div className="text-xs text-[#3D5166]">
+                Assurez-vous que la répartition financière correspond au montant sollicité et que vos devis sont joints.
               </div>
-            )}
-          </form>
-        </div>
-
-        {/* Documents Upload Section */}
-        <DocumentsUploadCard
-          applicationId={applicationId}
-          documents={application.documents}
-          locked={locked}
-        />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="btn-red shrink-0 justify-center gap-2 px-7 text-xs shadow-xs"
+              >
+                <span>{submitting ? 'Enregistrement…' : 'Étape suivante : Descriptif du projet'}</span>
+                <ArrowRight className="size-4" />
+              </button>
+            </div>
+          )}
+        </form>
       </main>
     </div>
   );

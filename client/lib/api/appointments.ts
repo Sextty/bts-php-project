@@ -13,6 +13,10 @@ export interface AppointmentDto {
   id: number;
   attempt_number: number;
   max_attempts: number;
+  reschedule_count: number;
+  max_reschedules: number;
+  remaining_reschedules: number;
+  can_self_reschedule: boolean;
   scheduled_date: string;
   scheduled_time: string;
   status: 'proposed' | 'accepted' | 'rejected' | 'cancelled';

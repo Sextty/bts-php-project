@@ -96,6 +96,16 @@ class GeminiResponseValidatorTest extends TestCase
         $this->validator->validate($this->validPayload(['comment' => '   ']));
     }
 
+    public function test_limits_verbose_comments_for_fast_reading(): void
+    {
+        $result = $this->validator->validate($this->validPayload([
+            'comment' => str_repeat('Observation détaillée en français. ', 20),
+        ]));
+
+        $this->assertLessThanOrEqual(180, mb_strlen($result['comment']));
+        $this->assertStringEndsWith('...', $result['comment']);
+    }
+
     public function test_rejects_non_array_extracted_fields(): void
     {
         $this->expectException(GeminiMalformedResponseException::class);
