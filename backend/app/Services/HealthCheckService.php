@@ -150,7 +150,20 @@ class HealthCheckService
 
         try {
             $root = (string) config('filesystems.disks.documents.root', storage_path('app/documents'));
-            $freeBytes = @disk_free_space($root);
+            // Local/fake disks may create their configured root lazily. Probe the closest
+            // existing parent so readiness remains portable across Linux CI, Windows and fresh
+            // deployments; the separate storage write check still fails if the disk is unusable.
+            $probePath = $root;
+            while (! is_dir($probePath)) {
+                $parent = dirname($probePath);
+                if ($parent === $probePath) {
+                    return ['ok' => false, 'detail' => 'unavailable'];
+                }
+
+                $probePath = $parent;
+            }
+
+            $freeBytes = @disk_free_space($probePath);
             if ($freeBytes === false) {
                 return ['ok' => false, 'detail' => 'unavailable'];
             }

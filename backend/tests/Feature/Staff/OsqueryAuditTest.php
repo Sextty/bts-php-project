@@ -122,11 +122,17 @@ class OsqueryAuditTest extends TestCase
             'sql' => 'SELECT pid, port, protocol, address, process_name, state FROM listening_ports WHERE port != 0 ORDER BY port ASC;',
         ])->assertOk();
 
-        $this->assertGreaterThanOrEqual(1, $response->json('data.count'));
+        // A minimal CI/container host can legitimately expose no listening sockets. Validate
+        // the stable query shape instead of depending on ambient host activity.
         $rows = $response->json('data.rows');
-        $this->assertNotEmpty($rows);
-        $this->assertArrayHasKey('port', $rows[0]);
-        $this->assertArrayHasKey('process_name', $rows[0]);
+        $this->assertIsArray($rows);
+        $this->assertContains('port', $response->json('data.columns'));
+        $this->assertContains('process_name', $response->json('data.columns'));
+
+        if ($rows !== []) {
+            $this->assertArrayHasKey('port', $rows[0]);
+            $this->assertArrayHasKey('process_name', $rows[0]);
+        }
     }
 
     public function test_destructive_or_invalid_sql_is_rejected(): void
@@ -212,7 +218,10 @@ class OsqueryAuditTest extends TestCase
             'sql' => 'SELECT destination, netmask, gateway, interface FROM routes;',
         ])->assertOk();
 
-        $this->assertGreaterThanOrEqual(1, $responseRoutes->json('data.count'));
+        // Route tables are also allowed to be empty in isolated containers.
+        $this->assertIsArray($responseRoutes->json('data.rows'));
+        $this->assertContains('destination', $responseRoutes->json('data.columns'));
+        $this->assertContains('interface', $responseRoutes->json('data.columns'));
     }
 
     public function test_admin_can_run_quick_audit_scan(): void

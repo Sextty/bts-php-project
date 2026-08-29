@@ -165,7 +165,7 @@ For a synthetic development test through OpenRouter:
 
 ```dotenv
 DOCUMENT_VERIFICATION_PROVIDER=openrouter
-OPENROUTER_API_KEY=your_backend_only_key
+OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 OPENROUTER_REASONING_ENABLED=false
 ```
