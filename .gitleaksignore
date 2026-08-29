@@ -5,6 +5,5 @@ backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:
 backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:143
 backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:144
 backend/tests/Feature/Banking/LedgerCoreTest.php:generic-api-key:133
-# Documentation-only placeholder introduced with the first README. The current README leaves the
-# value empty; retaining this fingerprint allows full-history scans without hiding other findings.
-9d732770db4d3b91b68ea03d7ffbbb7028c73074:README.md:generic-api-key:131
+# Synthetic notification dedupe key in an outbox rollback test; not a credential.
+b93bf17e4e45f8ebb81e8fbfc541a5d51633514a:backend/tests/Feature/Async/TransactionalOutboxTest.php:generic-api-key:41
