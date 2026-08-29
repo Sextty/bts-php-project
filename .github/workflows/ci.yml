@@ -79,10 +79,17 @@ jobs:
         shell: powershell
         run: |
           $launcher = (Resolve-Path 'scripts/dev-stack.ps1').Path
-          $childCommand = "`$env:Path=''; & '$launcher' start"
+          $childCommand = "`$ProgressPreference='SilentlyContinue'; `$env:Path=''; & '$launcher' start"
+          $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCommand))
           $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-          $output = (& $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -Command $childCommand 2>&1 | Out-String)
-          $exitCode = $LASTEXITCODE
+          $stdoutPath = Join-Path $env:RUNNER_TEMP 'launcher-stdout.log'
+          $stderrPath = Join-Path $env:RUNNER_TEMP 'launcher-stderr.log'
+          $process = Start-Process -FilePath $windowsPowerShell `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand) `
+            -WindowStyle Hidden -Wait -PassThru `
+            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+          $output = ((Get-Content -LiteralPath $stdoutPath, $stderrPath -Raw) -join "`n")
+          $exitCode = $process.ExitCode
           if ($exitCode -ne 1) {
             throw "Expected launcher prerequisite failure exit 1, received $exitCode."
           }
