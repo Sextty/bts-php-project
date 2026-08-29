@@ -42,6 +42,11 @@ sc/next-env.d.ts
 
 # General
 .DS_Store
+desktop.ini
+Thumbs.db
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
 *.log
 node_modules/
 test-results/
