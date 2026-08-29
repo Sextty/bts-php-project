@@ -343,8 +343,13 @@ function Stop-Stack {
     Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
 }
 
-switch ($Action) {
-    'start' { Start-Stack }
-    'status' { Show-Status }
-    'stop' { Stop-Stack }
+try {
+    switch ($Action) {
+        'start' { Start-Stack }
+        'status' { Show-Status }
+        'stop' { Stop-Stack }
+    }
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
 }
