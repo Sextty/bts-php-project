@@ -65,7 +65,8 @@ jobs:
         shell: powershell
         run: |
           $output = & .\scripts\dev-stack.ps1 status | Out-String
-          if ($LASTEXITCODE -ne 0) {
+          $statusSucceeded = $?
+          if (-not $statusSucceeded) {
             throw "Launcher status failed:`n$output"
           }
           foreach ($service in @('api', 'queue', 'reverb', 'client', 'staff', 'admin', 'security-center')) {
