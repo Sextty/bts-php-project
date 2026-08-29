@@ -40,6 +40,66 @@ jobs:
           format: spdx-json
           artifact-name: bts-bank-sbom.spdx.json
 
+  dev-stack-windows:
+    name: Windows local launcher
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse the PowerShell launcher
+        shell: pwsh
+        run: |
+          $parseErrors = $null
+          $tokens = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts/dev-stack.ps1'),
+            [ref] $tokens,
+            [ref] $parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List
+            throw 'PowerShell launcher contains syntax errors.'
+          }
+
+      - name: Verify the non-mutating status command
+        shell: powershell
+        run: |
+          $output = & .\scripts\dev-stack.ps1 status | Out-String
+          $statusSucceeded = $?
+          if (-not $statusSucceeded) {
+            throw "Launcher status failed:`n$output"
+          }
+          foreach ($service in @('api', 'queue', 'reverb', 'client', 'staff', 'admin', 'security-center')) {
+            if ($output -notmatch [regex]::Escape($service)) {
+              throw "Launcher status omitted $service."
+            }
+          }
+
+      - name: Verify prerequisite failures stay concise
+        shell: powershell
+        run: |
+          $launcher = (Resolve-Path 'scripts/dev-stack.ps1').Path
+          $childCommand = "`$ProgressPreference='SilentlyContinue'; `$env:Path=''; & '$launcher' start"
+          $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childCommand))
+          $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $stdoutPath = Join-Path $env:RUNNER_TEMP 'launcher-stdout.log'
+          $stderrPath = Join-Path $env:RUNNER_TEMP 'launcher-stderr.log'
+          $process = Start-Process -FilePath $windowsPowerShell `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encodedCommand) `
+            -WindowStyle Hidden -Wait -PassThru `
+            -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+          $output = ((Get-Content -LiteralPath $stdoutPath, $stderrPath -Raw) -join "`n")
+          $exitCode = $process.ExitCode
+          if ($exitCode -ne 1) {
+            throw "Expected launcher prerequisite failure exit 1, received $exitCode."
+          }
+          if ($output -notmatch 'php.exe is not available' -or $output -notmatch 'npm.cmd is not available') {
+            throw "Launcher omitted actionable prerequisite errors:`n$output"
+          }
+          if ($output -match 'CategoryInfo|FullyQualifiedErrorId|Au caractère') {
+            throw "Launcher printed a PowerShell stack trace:`n$output"
+          }
+
   backend:
     name: Backend (Laravel) — tests, audit
     runs-on: ubuntu-latest
