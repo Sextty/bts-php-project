@@ -118,6 +118,17 @@ Copy-Item .env.example .env.local
 
 ## Start locally
 
+On Windows, the safe launcher checks dependencies, frontend API URLs, occupied ports, and the
+local mail transport before starting the complete stack:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-stack.ps1 start
+```
+
+Use `scripts/dev-stack.ps1 status` to inspect it and `scripts/dev-stack.ps1 stop` to stop only the
+processes created by the launcher. For a synthetic demo, use `MAIL_MAILER=log`; an external mail
+transport requires explicit `-AllowExternalMail` authorization.
+
 Open a separate terminal for each command:
 
 ```powershell
