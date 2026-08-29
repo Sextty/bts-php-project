@@ -1,0 +1,10 @@
+{
+  "description": "This professional landing page for BTS Bank offers users easy access to financing solutions, account management, and banking services in a trustworthy, modern design.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

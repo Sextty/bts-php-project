@@ -13,13 +13,44 @@ backend/public/hot
 backend/public/storage
 backend/.phpunit.result.cache
 
-# Frontend (Next.js)
+# Frontends (Next.js) — one app per role
 frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/.env*.local
 frontend/next-env.d.ts
+client/node_modules/
+client/.next*/
+client/out/
+client/.env*.local
+client/next-env.d.ts
+staff/node_modules/
+staff/.next*/
+staff/out/
+staff/.env*.local
+staff/next-env.d.ts
+admin/node_modules/
+admin/.next*/
+admin/out/
+admin/.env*.local
+admin/next-env.d.ts
+sc/node_modules/
+sc/.next*/
+sc/out/
+sc/.env*.local
+sc/next-env.d.ts
 
 # General
 .DS_Store
 *.log
+node_modules/
+test-results/
+playwright-report/
+blob-report/
+test_key*.php
+backend/test_key*.php
+
+# Phase 5 synthetic load-test runtime artifacts (binary, secrets, results)
+tools/synthetic-load-tester/bin/
+tools/synthetic-load-tester/results/
+tools/synthetic-load-tester/__pycache__/

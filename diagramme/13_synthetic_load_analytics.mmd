@@ -1,0 +1,44 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+flowchart LR
+    subgraph GEN["Generation synthetique deterministe"]
+        CMD["php artisan bts:generate-data<br/>seed, profil, chunks, checkpoints"]:::tool
+        SAFE["Safety gate<br/>identites .invalid<br/>pas de vrais jetons<br/>override production explicite"]:::safe
+        FACT["Factories metier<br/>chemins d'etats valides<br/>metadonnees documentaires"]:::tool
+        CMD --> SAFE --> FACT
+    end
+
+    subgraph LOAD["Campagne de charge isolee"]
+        GUI["Tkinter GUI / run.ps1"]:::tool
+        DBNEW["Base bts_load_<timestamp>_<pid><br/>marqueur signe"]:::safe
+        SERVICES["API + queue + scheduler<br/>OTP collector + Reverb"]:::tool
+        K6["k6 1.5.0<br/>1-100 workflows concurrents configures"]:::tool
+        VERIFY["Verification post-run<br/>ownership, etats, agence, RDV,<br/>notifications, audit chain"]:::safe
+        GUI --> DBNEW --> SERVICES --> K6 --> VERIFY
+    end
+
+    FACT --> DATA[("MariaDB synthetique")]
+    DBNEW --> DATA
+    K6 -->|workflows HTTP reels| SERVICES
+    SERVICES --> DATA
+
+    subgraph ANALYTICS["Analytics applicatives mesurees"]
+        API["API agregee Laravel<br/>fenetre <= 730 jours<br/>exports <= 2500 lignes"]:::analytics
+        SCOPE["Admin global / filtre agence<br/>Staff force a son agence"]:::safe
+        QUERY["30 requetes mesurees<br/>indexes couvrants Phase 6"]:::analytics
+        UI["Dashboards Admin et Staff<br/>pas de PII brute"]:::analytics
+        QUALITY["10 controles qualite<br/>lecture seule"]:::safe
+        API --> SCOPE --> QUERY --> UI
+        QUERY --> QUALITY
+    end
+    DATA --> QUERY
+
+    E1["Preuve generation<br/>small: 1 000 clients / 1 300 dossiers<br/>medium: 50 000 / 65 000"]:::evidence --> FACT
+    E2["Preuve charge locale<br/>max observe: 30 concurrents<br/>burst p95 environ 6,8 s"]:::evidence --> K6
+    E3["Benchmark medium<br/>33,075 s -> 3,507 s<br/>gain environ 89,4 %"]:::evidence --> QUERY
+    LIMIT["Non prouves: large/massive, soak long,<br/>saturation OS, failover, SLA production"]:::risk -.-> DATA
+
+    classDef tool fill:#E0F2FE,stroke:#0369A1,stroke-width:2px,color:#0C4A6E;
+    classDef safe fill:#DCFCE7,stroke:#15803D,stroke-width:2px,color:#14532D;
+    classDef analytics fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef evidence fill:#FFFBEB,stroke:#B45309,stroke-width:2px,color:#78350F;
+    classDef risk fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#881337;

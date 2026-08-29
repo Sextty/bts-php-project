@@ -1,0 +1,42 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+flowchart TB
+    HTTP["Requete metier<br/>dossier, message, notification"]:::input
+    TX["Transaction Laravel"]:::step
+    DOMAIN[("Ecriture metier<br/>MariaDB")]:::data
+    NOTIF[("app_notifications<br/>dedupe_key")]:::data
+    DELIV[("notification_deliveries<br/>canal, statut, tentatives")]:::data
+    OUT[("async_outbox_events<br/>dedupe, available_at, runtime")]:::data
+    HTTP --> TX
+    TX --> DOMAIN
+    TX --> NOTIF
+    TX --> DELIV
+    TX --> OUT
+    TX --> RESP["Reponse HTTP apres commit"]:::ok
+
+    SCHED["Scheduler<br/>outbox:dispatch chaque minute<br/>reconcile notifications / 5 min"]:::async --> OUT
+    OUT --> JOB["ProcessAsyncOutboxEventJob<br/>retry + backoff"]:::async
+    JOB --> KIND{"Type d'evenement"}:::decision
+    KIND -->|report broadcast| REV["Reverb<br/>application.{id}.report"]:::external
+    KIND -->|notification broadcast| CH["Canal user.{id}, admin ou staff"]:::external
+    KIND -->|delivery| DNH["DeliverNotificationJob"]:::async
+    DNH --> EMAIL["Canal e-mail"]:::external
+    DNH --> SMS["Canal SMS"]:::external
+    JOB --> METRICS["queue_delay_ms, runtime_ms<br/>failed_at, last_error"]:::data
+
+    HEALTH["GET /api/health<br/>operations:status"]:::health --> CHECKS["MariaDB, cache, stockage, disque<br/>queue/backlog, worker, scheduler<br/>failed jobs, outbox, Reverb"]:::health
+    CHECKS --> OUT
+    CHECKS --> JOB
+    LOG["Logs JSON opt-in<br/>request ID + redaction PII/secrets"]:::health --> CHECKS
+
+    GAP1["F-002: le canal staff est partage<br/>entre agences"]:::risk -.-> CH
+    GAP2["F-022: les portails actuels ne consomment<br/>pas les broadcasts notification"]:::risk -.-> CH
+
+    classDef input fill:#E0F2FE,stroke:#0369A1,stroke-width:2px,color:#0C4A6E;
+    classDef step fill:#F8FAFC,stroke:#475569,stroke-width:1.5px,color:#0F172A;
+    classDef data fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef async fill:#ECFEFF,stroke:#0E7490,stroke-width:2px,color:#164E63;
+    classDef decision fill:#FFF7ED,stroke:#C2410C,stroke-width:2px,color:#7C2D12;
+    classDef external fill:#ECFDF5,stroke:#047857,stroke-width:2px,color:#064E3B;
+    classDef health fill:#FFFBEB,stroke:#B45309,stroke-width:2px,color:#78350F;
+    classDef ok fill:#DCFCE7,stroke:#15803D,stroke-width:2px,color:#14532D;
+    classDef risk fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#881337;

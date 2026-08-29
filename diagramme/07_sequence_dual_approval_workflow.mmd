@@ -1,0 +1,77 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
+sequenceDiagram
+    autonumber
+    actor S as Agent d'agence
+    actor A as Administrateur
+    actor C as Client
+    participant API as API Laravel 12
+    participant REVIEW as CreditApplicationReviewService
+    participant STATE as Machine d'etats
+    participant RDV as AppointmentSchedulingService
+    participant DB as MariaDB
+    participant OUT as Outbox / notifications
+
+    S->>API: GET /api/staff/applications/{id}
+    API->>DB: Dossier de l'agence + pieces + resultats IA
+    API-->>S: Vue d'instruction
+    alt Approbation premier niveau
+        S->>API: POST /api/staff/applications/{id}/approve
+        API->>REVIEW: staffApprove
+        REVIEW->>DB: Verrouille le dossier
+        REVIEW->>STATE: SUBMITTED -> STAFF_APPROVED
+        STATE->>DB: Decision staff + audit dans la transaction
+        REVIEW->>OUT: Notifie client et administrateurs
+        API-->>S: Transmis a la decision finale
+    else Rejet premier niveau
+        S->>API: POST /api/staff/applications/{id}/reject
+        API->>REVIEW: staffReject(reason)
+        REVIEW->>STATE: SUBMITTED -> STAFF_REJECTED
+        STATE->>DB: Motif + acteur + audit
+        REVIEW->>OUT: Notifie le client
+    end
+
+    A->>API: GET /api/staff/applications?status=STAFF_APPROVED
+    API-->>A: Dossiers eligibles
+    alt Approbation finale
+        A->>API: POST /api/staff/applications/{id}/admin-approve
+        API->>REVIEW: adminApprove
+        REVIEW->>DB: Verrou dossier puis agence
+        REVIEW->>STATE: STAFF_APPROVED -> APPROVED
+        REVIEW->>RDV: proposeNext
+        RDV->>DB: Cherche le premier jour ouvrable apres aujourd'hui
+        RDV->>DB: Verifie capacite, creneaux et essais precedents
+        RDV->>STATE: APPROVED -> APPOINTMENT_PROPOSED
+        RDV->>DB: appointments(attempt=1,status=proposed)
+        RDV->>OUT: appointment.created
+        API-->>A: APPROVED + rendez-vous propose
+    else Rejet final
+        A->>API: POST /api/staff/applications/{id}/admin-reject
+        API->>REVIEW: adminReject(reason)
+        REVIEW->>STATE: STAFF_APPROVED -> REJECTED
+        REVIEW->>OUT: Notifie le client
+    end
+
+    C->>API: GET /api/applications/{id}/appointment
+    API-->>C: Agence, date, heure, tentative
+    alt Client accepte
+        C->>API: POST /api/applications/{id}/appointment/accept
+        API->>RDV: accept
+        RDV->>DB: appointment=accepted
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_CONFIRMED
+    else Client refuse et tentative < 5
+        C->>API: POST /api/applications/{id}/appointment/reject
+        API->>RDV: reject
+        RDV->>DB: appointment=rejected
+        RDV->>RDV: Recherche un autre creneau ouvrable
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_PROPOSED
+        RDV->>OUT: appointment.changed
+    else Cinquieme refus
+        RDV->>STATE: APPOINTMENT_PROPOSED -> APPOINTMENT_LOCKED
+        RDV->>OUT: Intervention staff requise
+    end
+
+    opt Chemin manuel actuellement defectueux
+        S->>API: POST /api/staff/reports/{id}/appointment
+        API->>RDV: scheduleManual depuis STAFF_APPROVED
+        Note over S,RDV: F-001 - contourne l'approbation admin, correction P1 requise
+    end

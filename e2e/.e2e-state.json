@@ -1,0 +1,19 @@
+{
+  "customer": {
+    "email": "e2e.customer.6753561539@bts.test",
+    "phone": "+21667535615",
+    "password": "E2E-Customer-6753561539!"
+  },
+  "app1": {
+    "id": 19,
+    "nDemande": "CR-2026-000016"
+  },
+  "app2": {
+    "id": 20,
+    "nDemande": "CR-2026-000017"
+  },
+  "app3": {
+    "id": 21,
+    "nDemande": "CR-2026-000018"
+  }
+}

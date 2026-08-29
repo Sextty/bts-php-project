@@ -1,0 +1,63 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'15px','lineColor':'#475569'}}}%%
+flowchart TB
+    subgraph ACT["Acteurs"]
+        direction LR
+        CLIENT((Client)):::client
+        STAFF((Agent d'agence)):::staff
+        ADMIN((Administrateur)):::admin
+        SEC((Operateur securite)):::security
+    end
+
+    subgraph SYSTEME["Cas d'utilisation implementes"]
+        direction LR
+        subgraph UC_CLIENT["Portail client"]
+            direction TB
+            C1["Inscription / connexion<br/>mot de passe + OTP ou Google"]:::uc
+            C2["Creer et completer<br/>la demande de credit"]:::uc
+            C3["Documents, validations<br/>soumission / annulation"]:::uc
+            C4["Rendez-vous, rapport<br/>et notifications"]:::uc
+            C5["Consulter comptes et releves<br/>du pilote ledger"]:::pilot
+            C1 --> C2 --> C3 --> C4 --> C5
+        end
+        subgraph UC_STAFF["Portail staff"]
+            direction TB
+            S1["Dossiers limites<br/>a l'agence"]:::uc
+            S2["Examiner documents<br/>et avis IA"]:::uc
+            S3["Decision premier niveau<br/>et rapports"]:::uc
+            S4["Rendez-vous et analytics<br/>de l'agence"]:::gap
+            S5["Proposer un transfert<br/>si role autorise"]:::pilot
+            S1 --> S2 --> S3 --> S4 --> S5
+        end
+        subgraph UC_ADMIN["Portail admin"]
+            direction TB
+            A1["Decision finale<br/>sur le credit"]:::uc
+            A2["Pilotage global<br/>RDV et analytics"]:::uc
+            A3["Audit et osquery"]:::uc
+            A4["Compte, depot et validation<br/>maker-checker du pilote"]:::pilot
+            A1 --> A2 --> A3 --> A4
+        end
+        subgraph UC_SEC["Security Center"]
+            direction TB
+            Q1["Dashboard et activite<br/>d'audit"]:::uc
+            Q2["Suspension, reactivation<br/>et revocation de jetons"]:::uc
+            Q3["Inspection applications<br/>documents et RDV"]:::uc
+            Q4["osquery, vulnerabilites<br/>et export de preuves"]:::uc
+            Q1 --> Q2 --> Q3 --> Q4
+        end
+    end
+
+    CLIENT --> C1
+    STAFF --> S1
+    ADMIN --> A1
+    SEC --> Q1
+    S3 -. "transmet" .-> A1
+    A1 -. "declenche le cycle RDV" .-> C4
+    C3 -. "alimente l'instruction" .-> S2
+
+    classDef client fill:#E0F2FE,stroke:#0369A1,stroke-width:3px,color:#0C4A6E;
+    classDef staff fill:#FFEDD5,stroke:#C2410C,stroke-width:3px,color:#7C2D12;
+    classDef admin fill:#EDE9FE,stroke:#6D28D9,stroke-width:3px,color:#4C1D95;
+    classDef security fill:#FEE2E2,stroke:#B91C1C,stroke-width:3px,color:#7F1D1D;
+    classDef uc fill:#FFFFFF,stroke:#64748B,stroke-width:1.5px,color:#0F172A;
+    classDef pilot fill:#FFFBEB,stroke:#B45309,stroke-width:2px,color:#78350F;
+    classDef gap fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#881337;

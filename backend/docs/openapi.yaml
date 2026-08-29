@@ -1,0 +1,1327 @@
+openapi: 3.0.3
+info:
+  title: BTS Bank Credit — API
+  version: 1.0.0
+  description: |
+    Backend API for the BTS Bank credit-application platform. Three audiences:
+    customers (register/login with OTP, fill a 4-step application, upload documents,
+    validate, follow reviews, manage the proposed appointment, chat in the report),
+    staff (review submitted applications, reply in reports, view logs), and admins
+    (same as staff plus the global dashboard and the final decision).
+
+    Every response uses one of two envelopes:
+
+      success: `{ "success": true, "data": { ... } }`
+      error:   `{ "success": false, "error": { "code", "message", "request_id", "fields"? } }`
+
+    Errors additionally carry an `X-Request-Id` response header matching the
+    `request_id` in the body, so a client can hand support one id and the whole
+    request can be traced through the logs.
+
+    Authentication is a two-step challenge: password → `pre_auth_token` → OTP →
+    `access_token`. The access token is sent as `Authorization: Bearer <token>` on
+    every authenticated call. Customer and staff tokens live on the same table but
+    are strictly role-separated server-side: a staff token on a customer route (and
+    vice versa) is refused with 403.
+
+    Status lifecycle: DRAFT → STEP_1_COMPLETED → STEP_2_COMPLETED → STEP_3_COMPLETED
+    → READY_FOR_VALIDATION_1 → VALIDATION_1_COMPLETED → VALIDATION_2 → FINAL_LOCKED
+    → SUBMITTED → STAFF_APPROVED | STAFF_REJECTED → APPROVED | REJECTED →
+    APPOINTMENT_PROPOSED → APPOINTMENT_CONFIRMED | APPOINTMENT_LOCKED (3rd rejection
+    opens the report chat). CANCELLED is available to the customer up to VALIDATION_2.
+tags:
+  - name: Health
+  - name: Auth
+  - name: Applications
+  - name: Documents
+  - name: Staff
+  - name: Admin
+  - name: Appointments
+  - name: Reports
+  - name: Notifications
+  - name: Activity
+servers:
+  - url: http://localhost:8000
+    description: Local development
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: |
+        Public. Reports database, cache, Redis (when used), document storage, queue
+        and Reverb status. 200 when everything is healthy, 503 otherwise. Never
+        exposes credentials or exception internals.
+      responses:
+        '200':
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      status: { type: string, enum: [ok, degraded] }
+                      checks:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            ok: { type: boolean }
+                            detail: { type: string }
+        '503':
+          description: One or more dependencies degraded
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a customer account
+      description: Creates the account and emails an OTP. Throttled (6/min).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [first_name, last_name, email, phone, password]
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                email: { type: string, format: email }
+                phone: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201':
+          description: Account created, OTP dispatched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user_id: { type: integer }
+                      pre_auth_token: { type: string, description: Single-use, 5 min TTL — exchange for an access token at /api/auth/verify-registration-otp }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/verify-registration-otp:
+    post:
+      tags: [Auth]
+      summary: Verify the registration OTP and obtain an access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pre_auth_token, otp_code]
+              properties:
+                pre_auth_token: { type: string }
+                otp_code: { type: string, description: 6 digits }
+      responses:
+        '200':
+          $ref: '#/components/responses/Authenticated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Start the customer login challenge
+      description: Validates the password (timing-safe against enumeration), then dispatches an OTP by email. Throttled (6/min).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, password]
+              properties:
+                identifier: { type: string, description: Email or phone }
+                password: { type: string }
+      responses:
+        '200':
+          description: Password accepted, OTP dispatched
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      pre_auth_token: { type: string }
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/login/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Complete the login challenge with the OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pre_auth_token, otp_code]
+              properties:
+                pre_auth_token: { type: string }
+                otp_code: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Authenticated'
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/auth/google:
+    post:
+      tags: [Auth]
+      summary: Google sign-in (credential)
+      description: |
+        Exchanges a Google ID token for the challenge flow. A first-time user with no
+        verified phone is answered with `phone_required` and must call
+        /api/auth/google/set-phone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: { type: string, description: Google ID token (JWT) }
+      responses:
+        '200':
+          $ref: '#/components/responses/Authenticated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/google/set-phone:
+    post:
+      tags: [Auth]
+      summary: Attach a phone to a Google identity and dispatch the OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pre_auth_token, phone]
+              properties:
+                pre_auth_token: { type: string }
+                phone: { type: string }
+      responses:
+        '200':
+          description: OTP dispatched for the new phone
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      pre_auth_token: { type: string }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/auth/google/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify the Google-flow OTP and obtain an access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pre_auth_token, otp_code]
+              properties:
+                pre_auth_token: { type: string }
+                otp_code: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Authenticated'
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      summary: Revoke the current customer access token
+      responses:
+        '200':
+          description: Token revoked
+        '401':
+          $ref: '#/components/responses/Error'
+
+  /api/auth/password/forgot:
+    post:
+      tags: [Auth]
+      summary: Request a password-reset link
+      description: Same response for known and unknown emails (no enumeration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Reset link emailed if the account exists
+
+  /api/auth/password/reset:
+    post:
+      tags: [Auth]
+      summary: Reset the password with the emailed token
+      description: Revokes all existing sessions for the account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token, password]
+              properties:
+                email: { type: string, format: email }
+                token: { type: string }
+                password: { type: string, minLength: 8 }
+      responses:
+        '200':
+          description: Password changed
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/user:
+    get:
+      tags: [Auth]
+      security: [{ BearerAuth: [] }]
+      summary: Current authenticated customer
+      responses:
+        '200':
+          description: The customer profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+
+  /api/applications:
+    get:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: List the customer's own applications
+      responses:
+        '200':
+          description: List of the authenticated customer's applications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      applications:
+                        type: array
+                        items: { $ref: '#/components/schemas/Application' }
+    post:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Create a new application (starts in DRAFT)
+      responses:
+        '201':
+          description: Created application
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      application: { $ref: '#/components/schemas/Application' }
+
+  /api/applications/{application}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    get:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Show one of the customer's own applications
+      description: Only the owner may read it — anyone else gets 403/404.
+      responses:
+        '200':
+          description: Full application with client, credit request, project, documents and validation steps
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      application: { $ref: '#/components/schemas/Application' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/applications/{application}/client:
+    put:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Save the client step (step 1)
+      description: Saves the client data and advances the status (monotonic — saving out of order is tolerated within the customer chain).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientInput'
+      responses:
+        '200':
+          description: Updated application
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      application: { $ref: '#/components/schemas/Application' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/credit:
+    put:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Save the credit request step (step 2)
+      description: The application number (n_demande) is generated server-side; client-supplied values are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditRequestInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/project:
+    put:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Save the project step (step 3)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/documents:
+    post:
+      tags: [Documents]
+      security: [{ BearerAuth: [] }]
+      summary: Upload a document
+      description: |
+        Multipart upload. Content is sniffed server-side (finfo) and must match the
+        allowlist; the stored name is a server-generated UUID under
+        application-{id}/ — the original filename is kept for display only. Max size
+        per file: 10 MB.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document_type, file]
+              properties:
+                document_type: { type: string, description: e.g. cin, attestation_travail, other }
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded document
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      document: { $ref: '#/components/schemas/Document' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/documents/{document}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - name: document
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Documents]
+      security: [{ BearerAuth: [] }]
+      summary: Download one of the customer's own documents
+      description: Streams from the private documents disk — no storage URL is ever exposed.
+      responses:
+        '200':
+          description: Binary file (attachment disposition)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Documents]
+      security: [{ BearerAuth: [] }]
+      summary: Delete a document (only while the application is editable)
+      responses:
+        '200':
+          description: Deleted
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/validation-1:
+    post:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Run validation 1 (completeness + AI document authenticity checks)
+      description: |
+        Gemini AI verification is advisory: without a configured key or on AI failure
+        the validation still passes. Fails with VALIDATION_1_FAILED (carrying a flat
+        `errors` list) when required documents are missing or the AI verdict is invalid.
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: false }
+                  error:
+                    type: object
+                    properties:
+                      code: { type: string, example: VALIDATION_1_FAILED }
+                      message: { type: string }
+                      errors: { type: array, items: { type: string } }
+
+  /api/applications/{application}/validation-2:
+    post:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Confirm and finalize (locks all sections)
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/submit:
+    post:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Submit the application for staff review
+      description: Requires FINAL_LOCKED. Routes the application to a branch (branch matching on the project city).
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/cancel:
+    post:
+      tags: [Applications]
+      security: [{ BearerAuth: [] }]
+      summary: Cancel the application (terminal, only before FINAL_LOCKED)
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/applications/{application}/appointment:
+    get:
+      tags: [Appointments]
+      security: [{ BearerAuth: [] }]
+      summary: Show the current proposed appointment
+      responses:
+        '200':
+          description: Current appointment proposal (404-style error when none)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      appointment: { $ref: '#/components/schemas/Appointment' }
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+
+  /api/applications/{application}/appointment/accept:
+    post:
+      tags: [Appointments]
+      security: [{ BearerAuth: [] }]
+      summary: Accept the proposed appointment
+      description: Moves the application to APPOINTMENT_CONFIRMED (terminal).
+      responses:
+        '200':
+          description: Accepted appointment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      appointment: { $ref: '#/components/schemas/Appointment' }
+        '409':
+          $ref: '#/components/responses/Error'
+
+  /api/applications/{application}/appointment/reject:
+    post:
+      tags: [Appointments]
+      security: [{ BearerAuth: [] }]
+      summary: Reject the proposal and get the next one
+      description: |
+        Re-proposes a new slot at the same branch (max 3 attempts). On the 3rd
+        rejection the application locks (APPOINTMENT_LOCKED) and the report chat opens.
+        Response carries `application_status` and `appointment` (null when locked).
+      responses:
+        '200':
+          description: New proposal or lock
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      application_status: { type: string }
+                      appointment:
+                        anyOf:
+                          - { $ref: '#/components/schemas/Appointment' }
+                          - { type: 'null' }
+
+  /api/applications/{application}/report/messages:
+    get:
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      summary: List the report conversation (customer side)
+      description: Only open once the application is locked after 3 appointment rejections. The owner may read.
+      responses:
+        '200':
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      messages:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportMessage' }
+    post:
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      summary: Send a report message (customer side)
+      description: Realtime delivery over the private-application.{id}.report Reverb channel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 4000 }
+      responses:
+        '201':
+          description: Created message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { $ref: '#/components/schemas/ReportMessage' }
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/staff/login:
+    post:
+      tags: [Staff]
+      summary: Staff portal login
+      description: Email + password, OTP-free. Staff accounts only — admin accounts are refused with 403 on this route.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Staff session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      access_token: { type: string }
+                      user:
+                        $ref: '#/components/schemas/StaffUser'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/admin/login:
+    post:
+      tags: [Admin]
+      summary: Admin portal login
+      description: Admin accounts only — staff accounts are refused with 403 here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Admin session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      access_token: { type: string }
+                      user: { $ref: '#/components/schemas/StaffUser' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/logout:
+    post:
+      tags: [Staff]
+      security: [{ BearerAuth: [] }]
+      summary: Revoke the current staff/admin token
+      responses:
+        '200':
+          description: Token revoked
+
+  /api/staff/applications:
+    get:
+      tags: [Staff]
+      security: [{ BearerAuth: [] }]
+      summary: Review queue (staff and admin)
+      description: |
+        Applications under review, paginated (25). Branch-assigned staff only see
+        their own branch; filter with ?status=SUBMITTED|STAFF_APPROVED|...
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Review queue
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      applications:
+                        type: array
+                        items: { $ref: '#/components/schemas/Application' }
+                      meta:
+                        type: object
+                        properties:
+                          current_page: { type: integer }
+                          last_page: { type: integer }
+                          total: { type: integer }
+
+  /api/staff/applications/{application}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    get:
+      tags: [Staff]
+      security: [{ BearerAuth: [] }]
+      summary: Show an application under review (staff and admin)
+      description: Branch-scoped; documents include the AI verification verdict.
+      responses:
+        '200':
+          description: Full application
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      application: { $ref: '#/components/schemas/Application' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/applications/{application}/documents/{document}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - name: document
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Documents]
+      security: [{ BearerAuth: [] }]
+      summary: Staff/admin document download
+      description: Branch-scoped, and only for applications actually under review. Streams from the private disk.
+      responses:
+        '200':
+          description: Binary file (attachment disposition)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/applications/{application}/approve:
+    post:
+      tags: [Staff]
+      security: [{ BearerAuth: [] }]
+      summary: First-level approval (staff or admin)
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/staff/applications/{application}/reject:
+    post:
+      tags: [Staff]
+      security: [{ BearerAuth: [] }]
+      summary: First-level rejection (staff or admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5 }
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/staff/applications/{application}/admin-approve:
+    post:
+      tags: [Admin]
+      security: [{ BearerAuth: [] }]
+      summary: Final approval (admin only)
+      description: Requires the application to be STAFF_APPROVED. Automatically proposes the first branch appointment.
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/staff/applications/{application}/admin-reject:
+    post:
+      tags: [Admin]
+      security: [{ BearerAuth: [] }]
+      summary: Final rejection (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5 }
+      responses:
+        '200':
+          $ref: '#/components/responses/ApplicationUpdated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/staff/dashboard:
+    get:
+      tags: [Admin]
+      security: [{ BearerAuth: [] }]
+      summary: Admin overview dashboard
+      description: KPIs, pipeline, 30-day timeline, per-team decision counts. Admin rank or above.
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 7, maximum: 90, default: 30 }
+      responses:
+        '200':
+          description: Dashboard aggregates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      kpis:
+                        type: object
+                        additionalProperties: true
+                      pipeline:
+                        type: array
+                        items: { type: object }
+                      timeline:
+                        type: array
+                        items: { type: object }
+                      team:
+                        type: array
+                        items: { type: object }
+
+  /api/staff/reports:
+    get:
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      summary: Report inbox (locked applications needing staff follow-up)
+      responses:
+        '200':
+          description: Locked applications with message counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      applications:
+                        type: array
+                        items: { $ref: '#/components/schemas/Application' }
+                      meta: { type: object }
+
+  /api/staff/reports/{application}/messages:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    get:
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      summary: Staff view of a report conversation
+      responses:
+        '200':
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      messages:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportMessage' }
+    post:
+      tags: [Reports]
+      security: [{ BearerAuth: [] }]
+      summary: Staff reply in a report
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, maxLength: 4000 }
+      responses:
+        '201':
+          description: Created message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { $ref: '#/components/schemas/ReportMessage' }
+
+  /api/staff/activity:
+    get:
+      tags: [Activity]
+      security: [{ BearerAuth: [] }]
+      summary: Audit log (role-scoped)
+      description: |
+        Admins see everything including IPs, user agents and auth events; regular
+        staff never receive authentication rows or network details, and branch-assigned
+        staff only see their own branch's applications.
+      parameters:
+        - name: action
+          in: query
+          schema: { type: string }
+        - name: application_id
+          in: query
+          schema: { type: integer }
+        - name: from
+          in: query
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Paginated audit rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items: { type: array }
+                      meta: { type: object }
+
+  /api/staff/activity/traffic:
+    get:
+      tags: [Activity]
+      security: [{ BearerAuth: [] }]
+      summary: Traffic summary (role-scoped, unique IPs admin-only)
+      responses:
+        '200':
+          description: Per-day event counts, top actions, active actors
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: object }
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      summary: Customer notification inbox
+      responses:
+        '200':
+          description: The customer's notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      notifications: { type: array }
+
+  /api/notifications/mark-read:
+    post:
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      summary: Mark one or all notifications as read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items: { type: integer }
+                  description: Omit to mark all
+      responses:
+        '200':
+          description: Marked
+
+  /api/staff/notifications:
+    get:
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      summary: Staff notification inbox
+      responses:
+        '200':
+          description: The staff member's notifications
+
+  /api/staff/notifications/mark-read:
+    post:
+      tags: [Notifications]
+      security: [{ BearerAuth: [] }]
+      summary: Mark staff notifications as read
+      responses:
+        '200':
+          description: Marked
+
+  /broadcasting/auth:
+    post:
+      summary: Private-channel subscription authorization (used by Echo clients)
+      description: |
+        Form-encoded socket_id + channel_name, Bearer token required. Returns the
+        Pusher-style auth signature for the channel or 403. Private channels:
+        user.{id}, application.{id}, application.{id}.report, staff, admin.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [socket_id, channel_name]
+              properties:
+                socket_id: { type: string }
+                channel_name: { type: string }
+      responses:
+        '200':
+          description: Channel authorized
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum token
+  parameters:
+    ApplicationId:
+      name: application
+      in: path
+      required: true
+      schema: { type: integer }
+      description: Application id (the customer may only ever reference their own)
+  responses:
+    Authenticated:
+      description: Access token + user
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean }
+              data:
+                type: object
+                properties:
+                  access_token: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+    ApplicationUpdated:
+      description: Updated application
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success: { type: boolean }
+              data:
+                type: object
+                properties:
+                  application: { $ref: '#/components/schemas/Application' }
+    Error:
+      description: Standard error envelope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationError:
+      description: Validation failed (422)
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorEnvelope'
+              - type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      code: { type: string, example: VALIDATION_ERROR }
+                      fields:
+                        type: object
+                        additionalProperties:
+                          type: array
+                          items: { type: string }
+    Forbidden:
+      description: Forbidden (403)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Not found (404)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: Too many requests (429)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    ErrorEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string, example: FORBIDDEN }
+            message: { type: string }
+            request_id:
+              type: string
+              description: Matches the X-Request-Id response header
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string }
+        phone: { type: string }
+        phone_verified_at: { type: string, nullable: true }
+        auth_provider: { type: string }
+        status: { type: string }
+    StaffUser:
+      type: object
+      properties:
+        id: { type: integer }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [staff, credit_officer, senior_staff, branch_manager, admin, super_admin] }
+        branch_id: { type: integer, nullable: true }
+        status: { type: string }
+    Application:
+      type: object
+      properties:
+        id: { type: integer }
+        status: { type: string }
+        application_number: { type: string, nullable: true }
+        is_locked: { type: boolean }
+        submitted_at: { type: string, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+        branch_id: { type: integer, nullable: true }
+        created_at: { type: string }
+        client: { $ref: '#/components/schemas/Client' }
+        credit_request: { $ref: '#/components/schemas/CreditRequest' }
+        project: { $ref: '#/components/schemas/Project' }
+        documents:
+          type: array
+          items: { $ref: '#/components/schemas/Document' }
+        validation_steps:
+          type: array
+          items: { type: object }
+    Client:
+      type: object
+      additionalProperties: true
+    CreditRequest:
+      type: object
+      additionalProperties: true
+    Project:
+      type: object
+      additionalProperties: true
+    Document:
+      type: object
+      properties:
+        id: { type: integer }
+        document_type: { type: string }
+        original_filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer }
+        uploaded_at: { type: string }
+        ai_verified_at: { type: string, nullable: true }
+        ai_is_valid: { type: boolean, nullable: true }
+        ai_confidence: { type: string, nullable: true, enum: [high, medium, low] }
+        ai_comment: { type: string, nullable: true }
+    Appointment:
+      type: object
+      properties:
+        id: { type: integer }
+        attempt_number: { type: integer }
+        scheduled_date: { type: string, format: date }
+        scheduled_time: { type: string }
+        status: { type: string, enum: [proposed, accepted, rejected] }
+        decided_at: { type: string, nullable: true }
+        branch: { type: object }
+    ReportMessage:
+      type: object
+      properties:
+        id: { type: integer }
+        sender_type: { type: string, enum: [customer, staff] }
+        sender_name: { type: string }
+        body: { type: string }
+        created_at: { type: string }
+    ClientInput:
+      type: object
+      additionalProperties: true
+    CreditRequestInput:
+      type: object
+      additionalProperties: true
+    ProjectInput:
+      type: object
+      additionalProperties: true

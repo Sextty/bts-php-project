@@ -1,0 +1,121 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#1E40AF',
+    'primaryTextColor': '#FFFFFF',
+    'primaryBorderColor': '#1E3A8A',
+    'lineColor': '#334155',
+    'secondaryColor': '#059669',
+    'tertiaryColor': '#F8FAFC',
+    'activationBorderColor': '#2563EB',
+    'activationBkgColor': '#DBEAFE',
+    'sequenceNumberColor': '#FFFFFF',
+    'actorBorder': '#1E3A8A',
+    'actorBkg': '#EFF6FF',
+    'actorTextColor': '#0F172A',
+    'actorLineColor': '#64748B',
+    'signalColor': '#1E293B',
+    'signalTextColor': '#0F172A',
+    'labelBoxBkgColor': '#F1F5F9',
+    'labelBoxBorderColor': '#94A3B8',
+    'labelTextColor': '#0F172A',
+    'loopTextColor': '#0F172A',
+    'noteBorderColor': '#CBD5E1',
+    'noteBkgColor': '#FEF3C7',
+    'noteTextColor': '#78350F'
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    %% ----------------------------------------------------
+    %% BTS BANK - SEQUENCE: CREDIT APPLICATION & AI VERIFY
+    %% ----------------------------------------------------
+
+    box rgb(239, 246, 255) "Client Interface"
+        actor User as "Client"
+        participant FE as "Client Portal"
+    end
+
+    box rgb(240, 253, 244) "BTS Core Backend"
+        participant API as "Laravel API"
+        participant AI_Svc as "DocumentVerificationService"
+    end
+
+    box rgb(255, 241, 242) "External AI Service"
+        participant Gemini as "Google Gemini 1.5 API"
+    end
+
+    box rgb(248, 250, 252) "Persistence Layer"
+        participant Storage as "Local Disk Storage"
+        participant DB as "MySQL Database"
+    end
+
+    %% Step 1: Client Info (Light Blue)
+    rect rgb(238, 246, 255)
+        note over User, DB: Étape 1 : Informations Personnelles & Coordonnées (Client Info)
+        User->>FE: Fill identity & coordinates
+        FE->>API: POST /api/applications/{id}/client
+        API->>DB: Save Client & validate Step 1
+        DB-->>API: Confirm Client saved
+        API-->>FE: HTTP 200 { step: 1, completed: true }
+        FE-->>User: Étape 1 validée
+    end
+
+    %% Step 2: Credit & Geolocation (Light Green)
+    rect rgb(240, 253, 244)
+        note over User, DB: Étape 2 : Paramètres du Crédit & Géolocalisation Agence
+        User->>FE: Fill amount + choose branch via Photon OSM
+        FE->>API: POST /api/applications/{id}/credit
+        API->>DB: Save CreditRequest & Branch ID
+        DB-->>API: Confirm CreditRequest saved
+        API-->>FE: HTTP 200 { step: 2, completed: true }
+        FE-->>User: Étape 2 validée
+    end
+
+    %% Step 3: Project Details (Light Amber)
+    rect rgb(255, 251, 235)
+        note over User, DB: Étape 3 : Détails du Projet & Plan d'Investissement
+        User->>FE: Fill project details & investment
+        FE->>API: POST /api/applications/{id}/project
+        API->>DB: Save Project (sector, costs, coordinates)
+        DB-->>API: Confirm Project saved
+        API-->>FE: HTTP 200 { step: 3, completed: true }
+        FE-->>User: Étape 3 validée
+    end
+
+    %% Step 4: Document Upload & AI OCR (Light Rose)
+    rect rgb(255, 241, 242)
+        note over User, DB: Étape 4 : Téléversement des Pièces Justificatives & Vérification IA OCR
+        User->>FE: Upload document (CIN / Devis)
+        FE->>API: POST /api/applications/{id}/documents (multipart)
+        API->>Storage: Save file to 'storage/app/documents/'
+        Storage-->>API: Confirm file saved
+        API->>DB: Insert Document (status: 'PENDING_ANALYSIS')
+        DB-->>API: Confirm Document created
+        
+        API->>AI_Svc: verifyDocument(documentFile, docType)
+        AI_Svc->>AI_Svc: Build prompt with field extraction rules
+        AI_Svc->>Gemini: POST generateContent (Base64 + Prompt)
+        Gemini-->>AI_Svc: Structured JSON (is_valid, confidence, extracted_data, anomalies)
+        
+        AI_Svc->>DB: Update Document (ai_is_valid, ai_confidence, ai_extracted_data)
+        DB-->>AI_Svc: Confirm Document updated
+        AI_Svc-->>API: Return AI verification result
+        API-->>FE: HTTP 200 { document, ai_analysis_summary }
+        FE-->>User: Show AI conformity indicator
+    end
+
+    %% Final Submission (Light Purple)
+    rect rgb(245, 243, 255)
+        note over User, DB: Étape 5 : Soumission Finale & Verrouillage du Dossier
+        User->>FE: Click 'Soumettre Définitivement'
+        FE->>API: POST /api/applications/{id}/submit
+        API->>DB: Verify 4 steps complete
+        DB-->>API: 4 steps verified
+        API->>DB: Update status='SUBMITTED', is_locked=true
+        API->>DB: Assign Number (BTS-2026-0042)
+        DB-->>API: Confirm status updated & number assigned
+        API-->>FE: HTTP 200 { status: 'SUBMITTED', application_number }
+        FE-->>User: Confirmation screen with dossier number
+    end

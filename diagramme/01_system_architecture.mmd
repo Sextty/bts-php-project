@@ -1,0 +1,83 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'15px','primaryTextColor':'#0F172A','lineColor':'#475569'}}}%%
+flowchart TB
+    subgraph ACTEURS["Acteurs"]
+        direction LR
+        CLIENT["Client"]:::actor
+        STAFF["Agent d'agence"]:::actor
+        ADMIN["Administrateur"]:::actor
+        SEC["Operateur securite"]:::actor
+    end
+
+    subgraph PORTAILS["Portails Next.js 16 / React 19"]
+        direction LR
+        PC["Client :3000<br/>Authentification, dossier, RDV, messagerie"]:::portal
+        PS["Staff :3001<br/>Instruction agence, rapports, analytics"]:::portal
+        PA["Admin :3002<br/>Decision finale, pilotage, osquery"]:::portal
+        PSC["Security Center :3003<br/>Audit, suspensions, telemetrie"]:::security
+    end
+
+    subgraph API["Monolithe modulaire Laravel 12 - API JSON :8000"]
+        direction LR
+        GATE["Sanctum<br/>roles, permissions, policies<br/>rate limits, CORS, security headers"]:::gateway
+        AUTH["Identite<br/>mot de passe, OTP, Google"]:::service
+        CREDIT["Demandes de credit<br/>etats, validations, decisions"]:::service
+        DOCS["Documents<br/>stockage prive, ClamAV, IA consultative"]:::service
+        OPS["RDV, rapports<br/>notifications, analytics"]:::service
+        BANK["Pilote ledger<br/>comptes, ecritures, maker-checker"]:::pilot
+        SCAPI["Securite<br/>audit, osquery, telemetrie"]:::security
+    end
+
+    subgraph ASYNC["Traitements asynchrones et temps reel"]
+        OUTBOX["Outbox transactionnelle<br/>queue base de donnees"]:::async
+        WORKER["Workers + scheduler"]:::async
+        REVERB["Laravel Reverb<br/>canaux prives"]:::async
+    end
+
+    subgraph DATA["Persistance"]
+        DB[("MariaDB<br/>source transactionnelle")]:::data
+        FILES["Stockage documentaire prive<br/>local ou S3-compatible"]:::data
+    end
+
+    subgraph EXT["Dependances optionnelles"]
+        GOOGLE["Google OAuth"]:::external
+        GEMINI["Gemini<br/>analyse documentaire consultative"]:::external
+        CLAM["ClamAV"]:::external
+        MSG["E-mail / SMS"]:::external
+        OSQ["osquery / outils hote"]:::external
+    end
+
+    CLIENT --> PC
+    STAFF --> PS
+    ADMIN --> PA
+    SEC --> PSC
+    PC --> GATE
+    PS --> GATE
+    PA --> GATE
+    PSC --> GATE
+    GATE --> AUTH & CREDIT & DOCS & OPS & BANK & SCAPI
+    AUTH --> GOOGLE & MSG
+    DOCS --> FILES
+    DOCS --> CLAM & GEMINI
+    SCAPI --> OSQ
+    AUTH --> DB
+    CREDIT --> DB
+    OPS --> DB
+    BANK --> DB
+    SCAPI --> DB
+    OPS --> OUTBOX
+    CREDIT --> OUTBOX
+    OUTBOX --> WORKER
+    WORKER --> DB & REVERB & MSG
+    PC <--> REVERB
+    PS <--> REVERB
+    PA <--> REVERB
+
+    classDef actor fill:#E0F2FE,stroke:#0369A1,stroke-width:2px,color:#0C4A6E;
+    classDef portal fill:#ECFDF5,stroke:#047857,stroke-width:2px,color:#064E3B;
+    classDef gateway fill:#FFF7ED,stroke:#C2410C,stroke-width:2px,color:#7C2D12;
+    classDef service fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef security fill:#FEF2F2,stroke:#B91C1C,stroke-width:2px,color:#7F1D1D;
+    classDef pilot fill:#FFFBEB,stroke:#B45309,stroke-width:2px,color:#78350F;
+    classDef async fill:#ECFEFF,stroke:#0E7490,stroke-width:2px,color:#164E63;
+    classDef data fill:#F1F5F9,stroke:#475569,stroke-width:2px,color:#1E293B;
+    classDef external fill:#FAFAF9,stroke:#78716C,stroke-width:1.5px,color:#44403C;

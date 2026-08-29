@@ -1,0 +1,73 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+flowchart TB
+    DEV["Poste Windows de developpement / demonstration<br/>XAMPP - donnees synthetiques"]:::host
+
+    subgraph BROWSERS["Navigateurs"]
+        direction LR
+        BC["Client"]:::browser
+        BS["Staff"]:::browser
+        BA["Admin"]:::browser
+        BSC["Security Center"]:::browser
+    end
+
+    subgraph NODE["Processus Next.js 16"]
+        direction LR
+        PC["client :3000"]:::frontend
+        PS["staff :3001"]:::frontend
+        PA["admin :3002"]:::frontend
+        PSC["sc :3003"]:::frontend
+    end
+
+    subgraph LARAVEL["Processus Laravel 12 / PHP 8.2"]
+        API["API JSON :8000<br/>artisan serve local"]:::backend
+        QUEUE["queue:work<br/>jobs et outbox"]:::backend
+        SCHED["schedule:work<br/>heartbeats, reconciliation"]:::backend
+        REVERB["Reverb :6001<br/>WebSocket prive"]:::realtime
+    end
+
+    subgraph XAMPP["Services locaux XAMPP"]
+        MDB[("MariaDB 10.4.32 :3306<br/>bts_php_backend")]:::data
+        DOCS["Stockage prive<br/>backend/storage ou racine configuree"]:::data
+        LOGS["Logs Laravel locaux<br/>canal JSON optionnel"]:::data
+    end
+
+    subgraph OPTIONAL["Services optionnels selon configuration"]
+        GOOG["Google OAuth"]:::external
+        GEM["Gemini"]:::external
+        CLAM["ClamAV"]:::external
+        MAIL["Resend / SMTP / Vonage"]:::external
+        S3["Stockage S3-compatible"]:::external
+        OSQ["osquery"]:::external
+    end
+
+    subgraph NOTPROD["Exigences non demontrees pour une production bancaire"]
+        PROD["HTTPS/reverse proxy supervise - HA - secrets gerees<br/>MariaDB supportee et redondee - sauvegarde immuable hors site<br/>monitoring/alerting centralise - MFA privilegiee - DR teste"]:::warning
+    end
+
+    DEV --- PC & PS & PA & PSC & API & QUEUE & SCHED & REVERB & MDB
+    BC --> PC
+    BS --> PS
+    BA --> PA
+    BSC --> PSC
+    PC --> API
+    PS --> API
+    PA --> API
+    PSC --> API
+    BC <--> REVERB
+    BS <--> REVERB
+    BA <--> REVERB
+    API --> MDB & DOCS & LOGS
+    API --> QUEUE
+    QUEUE --> MDB & REVERB & MAIL
+    SCHED --> MDB
+    API -.-> GOOG & GEM & CLAM & MAIL & S3 & OSQ
+    DEV -. "cible future, pas l'etat actuel" .-> PROD
+
+    classDef host fill:#E0F2FE,stroke:#0369A1,stroke-width:3px,color:#0C4A6E;
+    classDef browser fill:#F8FAFC,stroke:#64748B,stroke-width:1.5px,color:#0F172A;
+    classDef frontend fill:#ECFDF5,stroke:#047857,stroke-width:2px,color:#064E3B;
+    classDef backend fill:#FFF7ED,stroke:#C2410C,stroke-width:2px,color:#7C2D12;
+    classDef realtime fill:#ECFEFF,stroke:#0E7490,stroke-width:2px,color:#164E63;
+    classDef data fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef external fill:#FAFAF9,stroke:#78716C,stroke-width:1.5px,color:#44403C;
+    classDef warning fill:#FEF2F2,stroke:#B91C1C,stroke-width:2px,color:#7F1D1D;

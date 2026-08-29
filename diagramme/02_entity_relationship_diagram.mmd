@@ -1,0 +1,210 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'13px','primaryColor':'#E0F2FE','primaryTextColor':'#0F172A','primaryBorderColor':'#0369A1','lineColor':'#475569'}}}%%
+erDiagram
+    USERS ||--o{ OTP_CODES : "recoit"
+    USERS ||--o{ CREDIT_APPLICATIONS : "depose"
+    USERS ||--o{ BANK_ACCOUNTS : "detient"
+    USERS ||--o{ AUDIT_LOGS : "declenche"
+    USERS ||--o{ REPORT_MESSAGES : "ecrit"
+
+    BRANCHES ||--o{ STAFF_USERS : "affecte"
+    BRANCHES ||--o{ CREDIT_APPLICATIONS : "traite"
+    BRANCHES ||--o{ APPOINTMENTS : "accueille"
+    BRANCHES ||--o{ BANK_ACCOUNTS : "domicilie"
+
+    CREDIT_APPLICATIONS ||--o| CLIENTS : "profil"
+    CREDIT_APPLICATIONS ||--o| CREDIT_REQUESTS : "besoin"
+    CREDIT_APPLICATIONS ||--o| PROJECTS : "projet"
+    CREDIT_APPLICATIONS ||--o{ DOCUMENTS : "contient"
+    CREDIT_APPLICATIONS ||--o{ VALIDATION_STEPS : "valide"
+    CREDIT_APPLICATIONS ||--o{ APPOINTMENTS : "planifie"
+    CREDIT_APPLICATIONS ||--o{ REPORT_MESSAGES : "conversation"
+    CREDIT_APPLICATIONS ||--o{ AUDIT_LOGS : "trace"
+
+    APP_NOTIFICATIONS ||--o{ NOTIFICATION_DELIVERIES : "diffuse"
+    BANK_ACCOUNTS ||--o{ LEDGER_ENTRIES : "mouvemente"
+    LEDGER_TRANSACTIONS ||--|{ LEDGER_ENTRIES : "compose"
+    BANKING_TRANSFER_REQUESTS o|--o| LEDGER_TRANSACTIONS : "valide_en"
+    BANK_ACCOUNTS ||--o{ BANKING_TRANSFER_REQUESTS : "source"
+    BANK_ACCOUNTS ||--o{ BANKING_TRANSFER_REQUESTS : "destination"
+    ASYNC_OUTBOX_EVENTS }o..|| APP_NOTIFICATIONS : "achemine"
+    ASYNC_OUTBOX_EVENTS }o..|| REPORT_MESSAGES : "diffuse"
+
+    USERS {
+        bigint id PK
+        string email UK
+        string phone UK
+        string auth_provider
+        string status
+        datetime phone_verified_at
+        datetime banned_at
+    }
+    STAFF_USERS {
+        bigint id PK
+        bigint branch_id FK
+        string email UK
+        string role
+        string status
+    }
+    BRANCHES {
+        bigint id PK
+        string name
+        string ville
+        string delegation
+        decimal latitude
+        decimal longitude
+        int daily_capacity
+    }
+    CREDIT_APPLICATIONS {
+        bigint id PK
+        bigint user_id FK
+        bigint branch_id FK
+        string status
+        datetime submitted_at
+        bigint decided_by_staff_user_id FK
+        bigint decided_by_admin_user_id FK
+        datetime report_closed_at
+    }
+    CLIENTS {
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string code_client
+        string numero_pid
+        date date_naissance
+        string profession
+    }
+    CREDIT_REQUESTS {
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string n_demande UK
+        string type_demande
+        decimal montant_global_sollicite
+        decimal montant_eqp
+        decimal montant_fdr
+        decimal montant_amg
+        decimal montant_chp
+    }
+    PROJECTS {
+        bigint id PK
+        bigint credit_application_id FK,UK
+        string code_projet
+        string type_projet
+        string activite
+        decimal cout
+        decimal latitude
+        decimal longitude
+    }
+    DOCUMENTS {
+        bigint id PK
+        bigint credit_application_id FK
+        string document_type
+        string disk_path UK
+        string mime_type
+        int size_bytes
+        string malware_scan_status
+        boolean ai_is_valid
+        string ai_confidence
+    }
+    VALIDATION_STEPS {
+        bigint id PK
+        bigint credit_application_id FK
+        string step
+        string status
+        json errors
+    }
+    APPOINTMENTS {
+        bigint id PK
+        bigint credit_application_id FK
+        bigint branch_id FK
+        int attempt_number UK
+        date scheduled_date
+        time scheduled_time
+        string status
+    }
+    REPORT_MESSAGES {
+        bigint id PK
+        bigint credit_application_id FK
+        string sender_type
+        bigint user_id FK
+        bigint staff_user_id FK
+        text body
+        string attachment_path
+        string malware_scan_status
+    }
+    APP_NOTIFICATIONS {
+        bigint id PK
+        string notifiable_type
+        bigint notifiable_id
+        string type
+        string dedupe_key UK
+        datetime read_at
+    }
+    NOTIFICATION_DELIVERIES {
+        bigint id PK
+        bigint app_notification_id FK
+        string channel UK
+        string status
+        int attempts
+    }
+    AUDIT_LOGS {
+        bigint id PK
+        bigint user_id FK
+        bigint staff_user_id FK
+        bigint credit_application_id FK
+        string action
+        string previous_hash
+        string integrity_hash UK
+        string key_version
+    }
+    BANK_ACCOUNTS {
+        bigint id PK
+        bigint user_id FK
+        bigint branch_id FK
+        string account_number UK
+        string currency
+        string normal_side
+        string status
+    }
+    LEDGER_TRANSACTIONS {
+        bigint id PK
+        string reference UK
+        string idempotency_key UK
+        string transaction_type
+        string status
+        datetime posted_at
+    }
+    LEDGER_ENTRIES {
+        bigint id PK
+        bigint ledger_transaction_id FK
+        bigint bank_account_id FK
+        int sequence UK
+        string direction
+        bigint amount_millimes
+    }
+    BANKING_TRANSFER_REQUESTS {
+        bigint id PK
+        string reference UK
+        bigint source_account_id FK
+        bigint destination_account_id FK
+        bigint amount_millimes
+        string status
+        bigint ledger_transaction_id FK,UK
+    }
+    ASYNC_OUTBOX_EVENTS {
+        bigint id PK
+        string type
+        string aggregate_type
+        bigint aggregate_id
+        string dedupe_key UK
+        string status
+        int attempts
+    }
+    OTP_CODES {
+        bigint id PK
+        bigint user_id FK
+        string code_hash
+        string purpose
+        string channel
+        datetime expires_at
+        datetime consumed_at
+        int attempt_count
+    }

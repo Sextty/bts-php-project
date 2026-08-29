@@ -1,0 +1,39 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+flowchart LR
+    U["Client ou agent autorise"]:::actor --> R["Requete multipart<br/>type + fichier"]:::step
+    R --> V1{"Extension et taille<br/>autorisees ?"}:::decision
+    V1 -- Non --> X1["Rejet 4xx"]:::reject
+    V1 -- Oui --> V2["Inspection MIME reelle<br/>finfo cote serveur"]:::step
+    V2 --> V3{"MIME coherent ?"}:::decision
+    V3 -- Non --> X1
+    V3 -- Oui --> AV["ClamAV<br/>clamdscan ou clamscan"]:::step
+    AV --> M{"Verdict"}:::decision
+    M -- infecte --> X2["Rejet + audit<br/>aucun stockage"]:::reject
+    M -- indisponible / erreur --> MODE{"Mode scanner"}:::decision
+    MODE -- required --> X3["Echec ferme<br/>MalwareScannerUnavailable"]:::reject
+    MODE -- optional --> S["Poursuite locale<br/>statut unavailable/error"]:::warning
+    M -- clean --> S2["Statut clean"]:::ok
+    S --> STORE["DocumentStorage<br/>nom UUID + extension derivee"]:::step
+    S2 --> STORE
+    STORE --> FS["Stockage prive<br/>local ou S3-compatible"]:::data
+    STORE --> DB["documents / report_messages<br/>metadonnees + statut scan"]:::data
+    DB --> ACCESS{"Lecture demandee"}:::decision
+    ACCESS --> AUTH["Ownership / permission / agence<br/>liaison message-dossier"]:::step
+    AUTH --> POLICY["DocumentAccessPolicy<br/>infecte toujours bloque<br/>required exige clean"]:::step
+    POLICY --> DL["Reponse attachment<br/>nosniff, nom nettoye"]:::ok
+
+    DB -. "validation 1" .-> AI["IA consultative<br/>schema strict, confiance, ecarts"]:::ai
+    AI --> HUMAN["Revue humaine si doute<br/>ou fournisseur indisponible"]:::warning
+
+    F5["F-005: un retour false du stockage<br/>peut encore etre traite comme succes"]:::risk -.-> STORE
+    F13["F-013: ClamAV traite le malware;<br/>Gemini ne certifie pas l'authenticite"]:::risk -.-> AI
+
+    classDef actor fill:#E0F2FE,stroke:#0369A1,stroke-width:2px,color:#0C4A6E;
+    classDef step fill:#F8FAFC,stroke:#475569,stroke-width:1.5px,color:#0F172A;
+    classDef decision fill:#FFF7ED,stroke:#C2410C,stroke-width:2px,color:#7C2D12;
+    classDef reject fill:#FEE2E2,stroke:#B91C1C,stroke-width:2px,color:#7F1D1D;
+    classDef warning fill:#FEF3C7,stroke:#B45309,stroke-width:2px,color:#78350F;
+    classDef ok fill:#DCFCE7,stroke:#15803D,stroke-width:2px,color:#14532D;
+    classDef data fill:#F5F3FF,stroke:#6D28D9,stroke-width:2px,color:#4C1D95;
+    classDef ai fill:#ECFEFF,stroke:#0E7490,stroke-width:2px,color:#164E63;
+    classDef risk fill:#FFF1F2,stroke:#E11D48,stroke-width:2px,color:#881337;

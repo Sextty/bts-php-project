@@ -1,0 +1,81 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','lineColor':'#475569'}}}%%
+stateDiagram-v2
+    direction TB
+    [*] --> DRAFT
+
+    state "Brouillon" as DRAFT
+    state "Etape 1 terminee" as STEP_1_COMPLETED
+    state "Etape 2 terminee" as STEP_2_COMPLETED
+    state "Etape 3 terminee" as STEP_3_COMPLETED
+    state "Pret pour validation 1" as READY_FOR_VALIDATION_1
+    state "Validation 1 terminee" as VALIDATION_1_COMPLETED
+    state "Validation 2" as VALIDATION_2
+    state "Verrouillage final" as FINAL_LOCKED
+    state "Soumis" as SUBMITTED
+    state "Approuve staff" as STAFF_APPROVED
+    state "Rejete staff" as STAFF_REJECTED
+    state "Approuve admin" as APPROVED
+    state "Rejete admin" as REJECTED
+    state "RDV propose" as APPOINTMENT_PROPOSED
+    state "RDV confirme" as APPOINTMENT_CONFIRMED
+    state "RDV verrouille" as APPOINTMENT_LOCKED
+    state "Annule" as CANCELLED
+
+    DRAFT --> STEP_1_COMPLETED : client
+    STEP_1_COMPLETED --> STEP_2_COMPLETED : client
+    STEP_2_COMPLETED --> STEP_3_COMPLETED : client
+    STEP_3_COMPLETED --> READY_FOR_VALIDATION_1 : client
+    READY_FOR_VALIDATION_1 --> VALIDATION_1_COMPLETED : client
+    VALIDATION_1_COMPLETED --> VALIDATION_2 : client
+    VALIDATION_2 --> FINAL_LOCKED : client
+    FINAL_LOCKED --> SUBMITTED : client
+
+    DRAFT --> CANCELLED : client
+    STEP_1_COMPLETED --> CANCELLED : client
+    STEP_2_COMPLETED --> CANCELLED : client
+    STEP_3_COMPLETED --> CANCELLED : client
+    READY_FOR_VALIDATION_1 --> CANCELLED : client
+    VALIDATION_1_COMPLETED --> CANCELLED : client
+    VALIDATION_2 --> CANCELLED : client
+
+    SUBMITTED --> STAFF_APPROVED : staff
+    SUBMITTED --> STAFF_REJECTED : staff
+    SUBMITTED --> CANCELLED : staff
+    STAFF_APPROVED --> APPROVED : admin
+    STAFF_APPROVED --> REJECTED : admin
+    STAFF_APPROVED --> CANCELLED : staff
+
+    APPROVED --> APPOINTMENT_PROPOSED : admin / proposition auto
+    APPROVED --> APPOINTMENT_CONFIRMED : staff ou admin
+    APPROVED --> APPOINTMENT_LOCKED : staff ou admin
+    APPOINTMENT_PROPOSED --> APPOINTMENT_PROPOSED : nouvelle proposition
+    APPOINTMENT_PROPOSED --> APPOINTMENT_CONFIRMED : client accepte
+    APPOINTMENT_PROPOSED --> APPOINTMENT_LOCKED : client, 5 refus
+    APPOINTMENT_CONFIRMED --> APPOINTMENT_CONFIRMED : ajustement manuel
+    APPOINTMENT_CONFIRMED --> APPOINTMENT_PROPOSED : replanification
+    APPOINTMENT_LOCKED --> APPOINTMENT_CONFIRMED : planification manuelle
+    APPOINTMENT_LOCKED --> APPOINTMENT_PROPOSED : planification manuelle
+
+    STAFF_APPROVED --> APPOINTMENT_PROPOSED : implemente, anomalie P1
+    STAFF_APPROVED --> APPOINTMENT_CONFIRMED : implemente, anomalie P1
+    STAFF_APPROVED --> APPOINTMENT_LOCKED : implemente, anomalie P1
+
+    STAFF_REJECTED --> [*]
+    REJECTED --> [*]
+    CANCELLED --> [*]
+
+    note right of STAFF_APPROVED
+      Le code autorise actuellement un agent
+      a passer directement au cycle RDV.
+      Cette transition contourne la decision
+      finale admin et constitue la finding F-001.
+    end note
+
+    classDef customer fill:#E0F2FE,stroke:#0369A1,color:#0C4A6E;
+    classDef review fill:#FFF7ED,stroke:#C2410C,color:#7C2D12;
+    classDef approved fill:#DCFCE7,stroke:#15803D,color:#14532D;
+    classDef terminal fill:#FEE2E2,stroke:#B91C1C,color:#7F1D1D;
+    class DRAFT,STEP_1_COMPLETED,STEP_2_COMPLETED,STEP_3_COMPLETED,READY_FOR_VALIDATION_1,VALIDATION_1_COMPLETED,VALIDATION_2,FINAL_LOCKED customer
+    class SUBMITTED,STAFF_APPROVED review
+    class APPROVED,APPOINTMENT_PROPOSED,APPOINTMENT_CONFIRMED,APPOINTMENT_LOCKED approved
+    class STAFF_REJECTED,REJECTED,CANCELLED terminal

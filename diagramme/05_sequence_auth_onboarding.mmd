@@ -1,0 +1,61 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant FE as Portail client
+    participant API as API Laravel 12
+    participant AUTH as CustomerAuthService
+    participant OTP as OtpService
+    participant CACHE as Cache pre-auth
+    participant DB as MariaDB
+    participant MSG as E-mail / SMS
+    participant G as Google Identity
+
+    alt Inscription par mot de passe
+        C->>FE: Saisit identite, e-mail, telephone, mot de passe
+        FE->>API: POST /api/auth/register
+        API->>DB: Cree users(status=active, provider=password)
+        API->>AUTH: beginOtpChallenge(registration)
+        AUTH->>OTP: Genere un code aleatoire a 6 chiffres
+        OTP->>DB: Stocke code_hash, expiration, tentatives
+        OTP->>MSG: Envoie le code sans le journaliser
+        AUTH->>CACHE: Stocke un pre_auth_token opaque (5 min)
+        API-->>FE: 201 user_id + pre_auth_token
+        C->>FE: Saisit le code OTP
+        FE->>API: POST /api/auth/verify-registration-otp
+        API->>AUTH: completeOtpChallenge
+        AUTH->>OTP: Verifie expiration, hash, limite et consommation atomique
+        OTP->>DB: consumed_at et phone_verified_at
+        AUTH->>DB: Cree un jeton Sanctum
+        API-->>FE: access_token + profil
+    else Connexion par mot de passe
+        C->>FE: Identifiant + mot de passe
+        FE->>API: POST /api/auth/login
+        API->>AUTH: Verifie credentials et statut
+        AUTH->>OTP: Lance challenge login
+        OTP->>DB: Remplace tout ancien OTP actif
+        OTP->>MSG: Envoie OTP
+        API-->>FE: pre_auth_token
+        FE->>API: POST /api/auth/login/verify-otp
+        API->>OTP: Consomme OTP de facon atomique
+        API->>DB: Cree un jeton Sanctum limite dans le temps
+        API-->>FE: access_token + profil
+    else Google OAuth
+        C->>FE: Selectionne Google
+        FE->>G: Obtient google_id_token
+        FE->>API: POST /api/auth/google
+        API->>G: Verifie signature et e-mail Google
+        API->>DB: Lie ou cree users(auth_provider=google)
+        alt Telephone deja verifie
+            API->>DB: Cree directement un jeton Sanctum
+            Note over API,DB: F-015: le statut suspendu n'est pas recontrole ici
+            API-->>FE: access_token + profil
+        else Telephone absent ou non verifie
+            API-->>FE: requires_phone ou requires_otp + pre_auth_token
+            FE->>API: POST /api/auth/google/set-phone si necessaire
+            API->>OTP: Envoie OTP registration
+            FE->>API: POST /api/auth/google/verify-otp
+            API->>DB: phone_verified_at + jeton Sanctum
+            API-->>FE: access_token + profil
+        end
+    end

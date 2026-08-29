@@ -1,0 +1,50 @@
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'Arial, sans-serif','fontSize':'14px','actorBkg':'#E0F2FE','actorBorder':'#0369A1','signalColor':'#334155','noteBkgColor':'#FEF3C7'}}}%%
+sequenceDiagram
+    autonumber
+    actor C as Client
+    participant FC as Portail client + Echo
+    participant API as API Laravel 12
+    participant AUTH as Autorisation de canal
+    participant DB as MariaDB
+    participant OUT as Async outbox
+    participant W as Worker queue
+    participant R as Reverb
+    participant FS as Stockage prive
+    participant FS2 as Portail staff + Echo
+    actor S as Agent
+
+    C->>FC: Ouvre le rapport du dossier
+    FC->>API: POST /broadcasting/auth avec Bearer Sanctum
+    API->>AUTH: ApplicationReportChannel.join
+    AUTH->>DB: Verifie proprietaire ou staff + permission + agence
+    API-->>FC: Autorise private-application.{id}.report
+
+    S->>FS2: Ouvre le meme rapport autorise
+    FS2->>API: POST /broadcasting/auth
+    API->>AUTH: Verifie compte actif, reports.view et agence
+    API-->>FS2: Autorise le canal prive
+
+    C->>FC: Envoie un message ou une piece jointe
+    FC->>API: POST /api/applications/{id}/report/messages
+    opt Piece jointe
+        API->>FS: MIME reel + ClamAV + chemin prive UUID
+    end
+    API->>DB: Transaction: report_messages + audit + outbox
+    API-->>FC: 201, message durable
+    OUT->>W: ProcessAsyncOutboxEventJob
+    W->>DB: Charge le message apres commit
+    W->>R: Evenement report.message
+    R-->>FS2: Payload du message sur canal prive
+    FS2-->>S: Mise a jour instantanee
+
+    S->>FS2: Repond au client
+    FS2->>API: POST /api/staff/reports/{id}/messages
+    API->>DB: Message staff + audit + outbox
+    API-->>FS2: 201
+    OUT->>W: Reprise asynchrone et visible en cas d'echec
+    W->>R: Evenement report.message
+    R-->>FC: Payload temps reel
+    FC-->>C: Affiche la reponse
+
+    Note over DB,R: La persistance ne depend pas de Reverb, l'outbox permet retry et supervision.
+    Note over API,R: F-002 concerne le canal notification staff partage, pas ce canal rapport branche.
