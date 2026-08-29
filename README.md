@@ -1,6 +1,4 @@
 <div align="center">
-  <img src="sc/public/logo.png" width="150" alt="BTS Bank logo">
-
   # Digital Credit Application Platform
 
   **A secure, role-based loan-origination experience connecting customers, branch teams, bank
@@ -34,20 +32,6 @@ by backend authorization and human review—the AI assists document analysis but
 > only. Production use requires banking governance, legal/compliance approval, independent
 > security assessment, managed infrastructure, and approved integrations.
 
-## The experience
-
-```mermaid
-flowchart LR
-    A[Customer onboarding] --> B[Credit dossier]
-    B --> C[Documents and AI assistance]
-    C --> D[Staff branch review]
-    D --> E[Admin final decision]
-    E --> F[Appointment and follow-up]
-    B -. audit events .-> G[Security Center]
-    C -. human review .-> D
-    D <-. realtime discussion .-> A
-```
-
 ## Applications
 
 Each role receives a dedicated interface while sharing the same workflow, data rules, and audit
@@ -78,37 +62,6 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 | Customer service | Automatic appointment proposal, controlled rescheduling and realtime dossier discussion |
 | Security | Explicit CORS/CSP/Reverb origins, authorization policies, throttling, audit logs and session monitoring |
 | Operations | Dashboards, workflow analytics, activity views and isolated end-to-end testing |
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Portals[Next.js portals]
-        Client[Client :3000]
-        Staff[Staff :3001]
-        Admin[Admin :3002]
-        SC[Security Center :3003]
-    end
-
-    Client --> API
-    Staff --> API
-    Admin --> API
-    SC --> API
-
-    API[Laravel REST API :8000] --> DB[(MariaDB / MySQL)]
-    API --> Storage[(Private document storage)]
-    API --> Queue[Queue and notifications]
-    API --> AI[Local / OpenRouter / Gemini adapter]
-    API <--> Reverb[Laravel Reverb :6001]
-    Reverb <--> Client
-    Reverb <--> Staff
-```
-
-<p align="center">
-  <a href="diagramme/img/01_system_architecture.png">
-    <img src="diagramme/img/01_system_architecture.png" width="900" alt="Detailed BTS Bank system architecture">
-  </a>
-</p>
 
 ## Technology stack
 
@@ -258,7 +211,6 @@ If the local database listens on a non-default port, pass it explicitly, for exa
 - [Detailed startup guide](GUIDE.md)
 - [Two-day MVP runbook](docs/TWO_DAY_MVP_RUNBOOK.md)
 - [API specification](backend/docs/openapi.yaml)
-- [Architecture diagram](architecture.puml)
 
 ## Security notes
 
