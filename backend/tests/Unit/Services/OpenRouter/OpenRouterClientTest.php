@@ -22,7 +22,7 @@ class OpenRouterClientTest extends TestCase
         config([
             'services.openrouter.api_key' => 'test-key',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
-            'services.openrouter.model' => 'minimax/minimax-m3:free',
+            'services.openrouter.model' => 'openrouter/free',
             'services.openrouter.http_referer' => 'http://localhost:8000',
             'services.openrouter.app_title' => 'BTS Bank Test',
             'services.openrouter.timeout_seconds' => 5,
@@ -63,7 +63,7 @@ class OpenRouterClientTest extends TestCase
         $this->assertSame(['is_valid' => true], $this->callImage());
     }
 
-    public function test_sends_image_with_minimax_reasoning_and_json_schema(): void
+    public function test_sends_image_with_reasoning_and_json_object_mode(): void
     {
         Http::fake(['openrouter.ai/*' => Http::response($this->envelope(['is_valid' => true]), 200)]);
 
@@ -76,16 +76,13 @@ class OpenRouterClientTest extends TestCase
                 && $request->hasHeader('Authorization', 'Bearer test-key')
                 && $request->hasHeader('HTTP-Referer', 'http://localhost:8000')
                 && $request->hasHeader('X-Title', 'BTS Bank Test')
-                && ($body['model'] ?? null) === 'minimax/minimax-m3:free'
+                && ($body['model'] ?? null) === 'openrouter/free'
                 && ($body['messages'][0]['content'][0]['type'] ?? null) === 'text'
                 && ($body['messages'][0]['content'][1]['type'] ?? null) === 'image_url'
                 && ($body['messages'][0]['content'][1]['image_url']['url'] ?? null)
                     === 'data:image/png;base64,'.base64_encode('image-bytes')
                 && ($body['reasoning'] ?? null) === ['enabled' => true, 'exclude' => true]
-                && ($body['response_format']['type'] ?? null) === 'json_schema'
-                && ($body['response_format']['json_schema']['strict'] ?? null) === true
-                && ($body['response_format']['json_schema']['schema']['required'] ?? null)
-                    === ['is_valid', 'confidence', 'comment', 'extracted_fields', 'mismatches']
+                && ($body['response_format'] ?? null) === ['type' => 'json_object']
                 && ! isset($body['plugins']);
         });
     }

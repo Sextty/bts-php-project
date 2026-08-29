@@ -214,6 +214,22 @@ class CreditApplication extends Model
         return $this->hasReached(self::STATUS_FINAL_LOCKED);
     }
 
+    /**
+     * Customer deletion is intentionally narrower than editing: a dossier may be removed only
+     * before validation 1 succeeds. An explicit allow-list makes every future workflow status
+     * non-deletable by default instead of accidentally widening this destructive action.
+     */
+    public function canBeDeletedByCustomer(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_DRAFT,
+            self::STATUS_STEP_1_COMPLETED,
+            self::STATUS_STEP_2_COMPLETED,
+            self::STATUS_STEP_3_COMPLETED,
+            self::STATUS_READY_FOR_VALIDATION_1,
+        ], true);
+    }
+
     /** True if $status is at or beyond $threshold in the state machine's fixed order. */
     public function hasReached(string $threshold): bool
     {

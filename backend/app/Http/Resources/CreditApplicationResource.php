@@ -14,6 +14,7 @@ class CreditApplicationResource extends JsonResource
             'id' => $this->id,
             'status' => $this->status,
             'is_locked' => $this->isLocked(),
+            'can_be_deleted' => $this->canBeDeletedByCustomer(),
             'submitted_at' => $this->submitted_at,
             // Review notes are internal. Staff APIs retain them; customer APIs do not expose them.
             'rejection_reason' => $request->user() instanceof StaffUser ? $this->rejection_reason : null,

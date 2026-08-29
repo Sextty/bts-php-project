@@ -49,6 +49,15 @@ class CreditApplicationController extends Controller
         return ApiResponse::ok(['application' => new CreditApplicationResource($application)]);
     }
 
+    public function destroy(Request $request, CreditApplication $application): JsonResponse
+    {
+        $this->authorize('delete', $application);
+
+        $this->applications->deleteUnfinished($application, $request->user(), $request->ip(), $request->userAgent());
+
+        return ApiResponse::noContent();
+    }
+
     public function submit(Request $request, CreditApplication $application): JsonResponse
     {
         $this->authorize('update', $application);

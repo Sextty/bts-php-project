@@ -24,12 +24,21 @@ class ValidationController extends Controller
     {
         $this->authorize('update', $application);
         $this->applications->assertEditable($application);
+        $validated = $request->validate([
+            'force_ai_validation' => ['sometimes', 'boolean'],
+        ]);
 
         if (! $application->hasReached(CreditApplication::STATUS_READY_FOR_VALIDATION_1)) {
             throw new ApiException(ApiErrorCode::StepsIncomplete);
         }
 
-        $errors = $this->validation->runValidationOne($application, $request->user(), $request->ip(), $request->userAgent());
+        $errors = $this->validation->runValidationOne(
+            $application,
+            $request->user(),
+            $request->ip(),
+            $request->userAgent(),
+            (bool) ($validated['force_ai_validation'] ?? false),
+        );
 
         if ($errors) {
             // The one hand-built error response in the app: business-validation output with a

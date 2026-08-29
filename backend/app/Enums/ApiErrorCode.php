@@ -26,6 +26,7 @@ enum ApiErrorCode: string
     case GoogleTokenInvalid = 'GOOGLE_TOKEN_INVALID';
     case Forbidden = 'FORBIDDEN';
     case ApplicationLocked = 'APPLICATION_LOCKED';
+    case ApplicationCannotBeDeleted = 'APPLICATION_CANNOT_BE_DELETED';
     case ApplicationNotLocked = 'APPLICATION_NOT_LOCKED';
     case Validation1Required = 'VALIDATION_1_REQUIRED';
     case StepsIncomplete = 'STEPS_INCOMPLETE';
@@ -64,7 +65,7 @@ enum ApiErrorCode: string
             self::MalwareScannerUnavailable => 503,
             self::Forbidden, self::AccountSuspended, self::ApplicationLocked,
             self::DocumentNotClean => 403,
-            self::ApplicationNotLocked, self::Validation1Required, self::StepsIncomplete,
+            self::ApplicationCannotBeDeleted, self::ApplicationNotLocked, self::Validation1Required, self::StepsIncomplete,
             self::InvalidApplicationStatus, self::NotCurrentAppointment,
             self::AppointmentAlreadyDecided, self::AppointmentRescheduleLimit, self::BankingAccountUnavailable,
             self::BankingInsufficientFunds, self::BankingCurrencyMismatch,
@@ -92,6 +93,7 @@ enum ApiErrorCode: string
             self::GoogleTokenInvalid => 'Google sign-in failed.',
             self::Forbidden => 'You do not have access to this resource.',
             self::ApplicationLocked => 'This application has been finalized and can no longer be modified.',
+            self::ApplicationCannotBeDeleted => 'Only an unfinished application can be deleted. A validated application must be retained.',
             self::ApplicationNotLocked => 'The application must be finalized before it can be submitted.',
             self::Validation1Required => 'Validation 1 must pass before validation 2.',
             self::StepsIncomplete => 'Complete all three steps before running validation.',

@@ -17,35 +17,6 @@ use Illuminate\Support\Facades\Log;
  */
 final class OpenRouterHttpClient implements DocumentAiClientInterface
 {
-    private const RESPONSE_JSON_SCHEMA = [
-        'type' => 'object',
-        'properties' => [
-            'is_valid' => ['type' => 'boolean'],
-            'confidence' => ['type' => 'string', 'enum' => ['high', 'medium', 'low']],
-            'comment' => ['type' => 'string', 'description' => 'Une phrase courte en français.'],
-            'extracted_fields' => [
-                'type' => 'object',
-                'additionalProperties' => ['type' => ['string', 'null']],
-            ],
-            'mismatches' => [
-                'type' => 'array',
-                'items' => [
-                    'type' => 'object',
-                    'properties' => [
-                        'field' => ['type' => 'string'],
-                        'expected' => ['type' => ['string', 'null']],
-                        'extracted' => ['type' => ['string', 'null']],
-                        'severity' => ['type' => 'string', 'enum' => ['critical', 'warning']],
-                    ],
-                    'required' => ['field', 'expected', 'extracted', 'severity'],
-                    'additionalProperties' => false,
-                ],
-            ],
-        ],
-        'required' => ['is_valid', 'confidence', 'comment', 'extracted_fields', 'mismatches'],
-        'additionalProperties' => false,
-    ];
-
     public function generateContent(
         string $mimeType,
         string $base64Contents,
@@ -191,14 +162,10 @@ final class OpenRouterHttpClient implements DocumentAiClientInterface
             'stream' => false,
             'max_tokens' => (int) config('services.openrouter.max_output_tokens', 768),
             'temperature' => (float) config('services.openrouter.temperature', 0.1),
-            'response_format' => [
-                'type' => 'json_schema',
-                'json_schema' => [
-                    'name' => 'bts_document_verification',
-                    'strict' => true,
-                    'schema' => self::RESPONSE_JSON_SCHEMA,
-                ],
-            ],
+            // Free OpenRouter vision providers accept JSON-object mode but do not uniformly
+            // implement strict JSON Schema. GeminiResponseValidator still strictly validates
+            // every field before any verdict is used.
+            'response_format' => ['type' => 'json_object'],
         ];
 
         if ((bool) config('services.openrouter.reasoning_enabled', true)) {

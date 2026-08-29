@@ -14,6 +14,16 @@ test.describe('client application journey', () => {
 
     await loginCustomer(page, state.customer);
 
+    // An unfinished draft is deletable by its owner and disappears from the customer list.
+    const disposableDraftId = await createApplication(page);
+    await page.goto(`${CLIENT}/applications`);
+    const disposableDraft = page.getByText(`Dossier #${disposableDraftId}`).locator('xpath=ancestor::article[1]');
+    await disposableDraft.getByRole('button', { name: `Supprimer le dossier ${disposableDraftId}` }).click();
+    const confirmation = page.getByRole('dialog');
+    await expect(confirmation.getByRole('heading', { name: 'Supprimer ce dossier inachevé ?' })).toBeVisible();
+    await confirmation.getByRole('button', { name: 'Supprimer le dossier' }).click();
+    await expect(page.getByText(`Dossier #${disposableDraftId}`)).toHaveCount(0);
+
     // --- Application 1: full happy path ---
     const app1Id = await createApplication(page);
     await completeApplication(page, app1Id);
@@ -34,6 +44,7 @@ test.describe('client application journey', () => {
     await expect(page.getByText(n1)).toBeVisible();
     await expect(page.getByText(n2)).toBeVisible();
     await expect(page.getByText(n3)).toBeVisible();
+    await expect(page.getByRole('button', { name: /Supprimer le dossier/ })).toHaveCount(0);
 
     saveState({
       customer: state.customer,

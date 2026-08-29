@@ -80,12 +80,12 @@ return [
         'validation_budget_seconds' => (int) env('DOCUMENT_AI_VALIDATION_BUDGET_SECONDS', 20),
     ],
 
-    // OpenRouter OpenAI-compatible adapter. MiniMax M3 is multimodal; PDF input uses
-    // OpenRouter's free Cloudflare parser so the selected free model can inspect PDF content.
+    // OpenRouter OpenAI-compatible adapter. The free router selects a currently available
+    // multimodal model; PDF input uses OpenRouter's free Cloudflare parser.
     'openrouter' => [
         'api_key' => env('OPENROUTER_API_KEY'),
         'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
-        'model' => env('OPENROUTER_MODEL', 'minimax/minimax-m3:free'),
+        'model' => env('OPENROUTER_MODEL', 'openrouter/free'),
         'http_referer' => env('OPENROUTER_HTTP_REFERER', env('APP_URL')),
         'app_title' => env('OPENROUTER_APP_TITLE', 'BTS Bank Development'),
         'connect_timeout_seconds' => (int) env('OPENROUTER_CONNECT_TIMEOUT_SECONDS', 5),
@@ -94,7 +94,7 @@ return [
         'retry_delay_ms' => (int) env('OPENROUTER_RETRY_DELAY_MS', 500),
         'max_output_tokens' => (int) env('OPENROUTER_MAX_OUTPUT_TOKENS', 768),
         'temperature' => (float) env('OPENROUTER_TEMPERATURE', 0.1),
-        'reasoning_enabled' => (bool) env('OPENROUTER_REASONING_ENABLED', true),
+        'reasoning_enabled' => (bool) env('OPENROUTER_REASONING_ENABLED', false),
         'pdf_engine' => env('OPENROUTER_PDF_ENGINE', 'cloudflare-ai'),
     ],
 

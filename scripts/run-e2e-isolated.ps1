@@ -15,6 +15,12 @@ if ($databaseName -notmatch '^bts_e2e_[0-9]+$') { throw 'Unsafe E2E database nam
 $mysqlCommand = Get-Command mysql.exe -ErrorAction SilentlyContinue
 $mysql = if ($mysqlCommand) { $mysqlCommand.Source } else { $null }
 if (-not $mysql) {
+    # Prefer the client shipped with the repository's supported MariaDB 11.4 service. The XAMPP
+    # client can be binary-incompatible with a newer server authentication plugin on Windows.
+    $mariaDbMysql = Join-Path $env:LOCALAPPDATA 'Programs\MariaDB\11.4.10\mariadb-11.4.10-winx64\bin\mysql.exe'
+    if (Test-Path -LiteralPath $mariaDbMysql) { $mysql = $mariaDbMysql }
+}
+if (-not $mysql) {
     $xamppMysql = 'C:\xampp\mysql\bin\mysql.exe'
     if (Test-Path -LiteralPath $xamppMysql) { $mysql = $xamppMysql }
 }
@@ -96,6 +102,7 @@ try {
     $env:REVERB_SERVER_PORT = '6101'
     $env:REVERB_SCHEME = 'http'
     $env:CORS_ALLOWED_ORIGINS = 'http://127.0.0.1:3100,http://127.0.0.1:3101,http://127.0.0.1:3102,http://127.0.0.1:3103'
+    $env:REVERB_ALLOWED_ORIGINS = '127.0.0.1'
     $env:CORS_ALLOW_LOCAL_DEVELOPMENT = 'false'
     $env:NEXT_PUBLIC_API_URL = 'http://127.0.0.1:8100'
     $env:NEXT_DIST_DIR = $distDirectoryName

@@ -3,16 +3,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, FilePlus2, Calendar, Building2 } from 'lucide-react';
+import { Building2, Calendar, ChevronRight, FilePlus2, Trash2, TriangleAlert } from 'lucide-react';
 import { DashboardHeader } from '@/components/dashboard-header';
 import { ErrorAlert } from '@/components/error-alert';
 import { Breadcrumbs, BackLink } from '@/components/breadcrumbs';
 import { StatusBadge } from '@/components/status-badge';
-import { createApplication, listApplications, type CreditApplicationDto } from '@/lib/api/credit-applications';
+import {
+  createApplication,
+  deleteApplication,
+  listApplications,
+  type CreditApplicationDto,
+} from '@/lib/api/credit-applications';
 import { ApiError } from '@/lib/api/client';
 import { getToken } from '@/lib/auth/token';
 import { InlineLoading } from '@/components/page-loading';
 import { statusLabel, statusPhase } from '@/lib/status-labels';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 function detailPath(app: CreditApplicationDto): string {
   return `/applications/${app.id}`;
@@ -41,6 +55,9 @@ export default function ApplicationsPage() {
   const [lastPage, setLastPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [applicationToDelete, setApplicationToDelete] = useState<CreditApplicationDto | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const fetchApplications = useCallback(async (showLoading = false) => {
     if (!getToken()) {
@@ -107,6 +124,27 @@ export default function ApplicationsPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Impossible de créer la demande. Veuillez réessayer.');
       setCreating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!applicationToDelete || deleting) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteApplication(applicationToDelete.id);
+      setApplications((current) => current.filter((application) => application.id !== applicationToDelete.id));
+      setTotal((current) => Math.max(0, current - 1));
+      setApplicationToDelete(null);
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError
+          ? err.message
+          : 'Impossible de supprimer ce dossier. Veuillez réessayer.',
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -186,11 +224,11 @@ export default function ApplicationsPage() {
                   : 'Montant non défini';
 
               return (
-                <Link
+                <article
                   key={app.id}
-                  href={detailPath(app)}
-                  className="block figma-card p-5 bg-white transition-all hover:border-[#C0272D] hover:shadow-sm group"
+                  className="figma-card overflow-hidden bg-white transition-all hover:border-[#C0272D] hover:shadow-sm group"
                 >
+                  <Link href={detailPath(app)} className="block p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#C0272D]">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3">
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -243,7 +281,24 @@ export default function ApplicationsPage() {
                       <span className="font-mono font-bold text-[#0C1825]">{pct}%</span>
                     </div>
                   </div>
-                </Link>
+                  </Link>
+                  {app.can_be_deleted && (
+                    <div className="flex justify-end border-t border-[#E0E4E9] bg-[#FAFBFC] px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setApplicationToDelete(app);
+                        }}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#A51D22] transition-colors hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C0272D] focus-visible:ring-offset-2"
+                        aria-label={`Supprimer ${app.credit_request?.n_demande ?? `le dossier ${app.id}`}`}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                        Supprimer le dossier
+                      </button>
+                    </div>
+                  )}
+                </article>
               );
             })}
             {page < lastPage && (
@@ -261,6 +316,57 @@ export default function ApplicationsPage() {
           </div>
         )}
       </main>
+
+      <Dialog
+        open={applicationToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setApplicationToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+      >
+        <DialogContent showCloseButton={false} className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mb-1 flex size-10 items-center justify-center rounded-full bg-red-50 text-[#C0272D]">
+              <TriangleAlert className="size-5" aria-hidden="true" />
+            </div>
+            <DialogTitle>Supprimer ce dossier inachevé ?</DialogTitle>
+            <DialogDescription>
+              Le dossier{' '}
+              <span className="font-semibold text-[#0C1825]">
+                {applicationToDelete?.credit_request?.n_demande ??
+                  (applicationToDelete ? `#${applicationToDelete.id}` : '')}
+              </span>{' '}
+              ne sera plus visible dans vos demandes. Un dossier déjà validé ne peut jamais être supprimé.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && (
+            <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              {deleteError}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleting}
+              onClick={() => {
+                setApplicationToDelete(null);
+                setDeleteError(null);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button type="button" variant="destructive" disabled={deleting} onClick={handleDelete}>
+              <Trash2 aria-hidden="true" />
+              {deleting ? 'Suppression…' : 'Supprimer le dossier'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

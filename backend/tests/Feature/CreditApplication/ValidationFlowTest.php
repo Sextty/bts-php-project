@@ -33,6 +33,20 @@ class ValidationFlowTest extends CreditApplicationTestCase
         $this->assertSame(CreditApplication::STATUS_READY_FOR_VALIDATION_1, $application->fresh()->status);
     }
 
+    public function test_forced_ai_validation_cannot_bypass_a_missing_required_document(): void
+    {
+        $application = $this->newApplication();
+        $this->completeAllThreeSteps($application);
+
+        $this->postJson("/api/applications/{$application->id}/validation-1", [
+            'force_ai_validation' => true,
+        ])->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_1_FAILED')
+            ->assertJsonPath('error.errors.0', 'Document manquant : ajoutez au moins un justificatif avant de lancer la vérification.');
+
+        $this->assertSame(CreditApplication::STATUS_READY_FOR_VALIDATION_1, $application->fresh()->status);
+    }
+
     public function test_validation_1_allows_no_document_only_when_explicitly_configured(): void
     {
         config()->set('credit_documents.require_at_least_one_for_validation', false);

@@ -57,12 +57,34 @@ class CreditApplicationValidationService
      * Runs validation-1, records the attempt (pass or fail) in validation_steps, and — only on
      * success — advances the application's status.
      */
-    public function runValidationOne(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): array
+    public function runValidationOne(
+        CreditApplication $application,
+        User $actor,
+        ?string $ip = null,
+        ?string $userAgent = null,
+        bool $forceAiValidation = false,
+    ): array
     {
         $errors = $this->checkRequiredSections($application);
+        $forcedAiErrors = [];
 
         if (! $errors) {
             $errors = $this->verifyDocuments($application);
+
+            if ($forceAiValidation && $errors) {
+                $forcedAiErrors = $errors;
+                $errors = [];
+
+                // Preserve the rejected AI verdict, but make the manual-review requirement
+                // explicit for staff. Required application sections are checked above and can
+                // never be bypassed by this customer choice.
+                $application->documents()
+                    ->where('ai_is_valid', false)
+                    ->update([
+                        'ai_processing_status' => 'needs_human_review',
+                        'ai_requires_human_review' => true,
+                    ]);
+            }
         }
 
         ValidationStep::create([
@@ -76,6 +98,17 @@ class CreditApplicationValidationService
             $this->auditLog->log('credit_application.validation_1_failed', $application->user, newState: ['errors' => $errors], ipAddress: $ip, userAgent: $userAgent, application: $application);
 
             return $errors;
+        }
+
+        if ($forcedAiErrors) {
+            $this->auditLog->log(
+                'credit_application.validation_1_forced',
+                $application->user,
+                newState: ['ai_errors' => $forcedAiErrors, 'requires_human_review' => true],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $application,
+            );
         }
 
         $this->stateMachine->apply($application, CreditApplication::STATUS_VALIDATION_1_COMPLETED, $actor, ip: $ip, userAgent: $userAgent);

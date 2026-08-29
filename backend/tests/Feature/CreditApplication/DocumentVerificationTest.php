@@ -90,13 +90,13 @@ class DocumentVerificationTest extends CreditApplicationTestCase
         $this->assertNull($document->ai_verified_at);
     }
 
-    public function test_openrouter_minimax_provider_verifies_document_through_existing_pipeline(): void
+    public function test_openrouter_free_provider_verifies_document_through_existing_pipeline(): void
     {
         config([
             'services.document_verification.provider' => 'openrouter',
             'services.openrouter.api_key' => 'test-key',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
-            'services.openrouter.model' => 'minimax/minimax-m3:free',
+            'services.openrouter.model' => 'openrouter/free',
         ]);
         Http::fake([
             'openrouter.ai/*' => Http::response($this->openRouterEnvelope($this->validVerdict()), 200),
@@ -112,7 +112,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
         $this->assertSame('high', $document->ai_confidence);
 
         Http::assertSent(fn ($request): bool => $request->url() === 'https://openrouter.ai/api/v1/chat/completions'
-            && ($request->data()['model'] ?? null) === 'minimax/minimax-m3:free');
+            && ($request->data()['model'] ?? null) === 'openrouter/free');
     }
 
     public function test_openrouter_rate_limit_cannot_exhaust_the_php_request_deadline(): void
@@ -122,7 +122,7 @@ class DocumentVerificationTest extends CreditApplicationTestCase
             'services.document_verification.validation_budget_seconds' => 1,
             'services.openrouter.api_key' => 'test-key',
             'services.openrouter.base_url' => 'https://openrouter.ai/api/v1',
-            'services.openrouter.model' => 'minimax/minimax-m3:free',
+            'services.openrouter.model' => 'openrouter/free',
             'services.openrouter.max_retries' => 1,
         ]);
         Http::fake([
@@ -215,6 +215,40 @@ class DocumentVerificationTest extends CreditApplicationTestCase
 
         $document = Document::where('credit_application_id', $application->id)->firstOrFail();
         $this->assertFalse($document->ai_is_valid);
+    }
+
+    public function test_customer_can_force_ai_rejection_into_mandatory_human_review(): void
+    {
+        $this->fakeGemini($this->validVerdict([
+            'is_valid' => false,
+            'comment' => 'Le document doit être contrôlé manuellement.',
+            'mismatches' => [],
+        ]));
+
+        $application = $this->applicationReadyForValidation();
+
+        $this->postJson("/api/applications/{$application->id}/validation-1")
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_1_FAILED');
+
+        $this->postJson("/api/applications/{$application->id}/validation-1", [
+            'force_ai_validation' => true,
+        ])->assertOk()
+            ->assertJsonPath('data.application.status', CreditApplication::STATUS_VALIDATION_1_COMPLETED);
+
+        $document = Document::where('credit_application_id', $application->id)->firstOrFail();
+        $this->assertFalse($document->ai_is_valid);
+        $this->assertTrue($document->ai_requires_human_review);
+        $this->assertSame('needs_human_review', $document->ai_processing_status);
+        $this->assertDatabaseHas('audit_logs', [
+            'credit_application_id' => $application->id,
+            'action' => 'credit_application.validation_1_forced',
+        ]);
+        $this->assertDatabaseHas('validation_steps', [
+            'credit_application_id' => $application->id,
+            'step' => 'validation_1',
+            'status' => 'passed',
+        ]);
     }
 
     public function test_validation_1_fails_when_ai_finds_critical_mismatches(): void

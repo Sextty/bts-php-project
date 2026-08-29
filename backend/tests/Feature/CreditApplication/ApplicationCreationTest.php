@@ -13,7 +13,8 @@ class ApplicationCreationTest extends CreditApplicationTestCase
 
         $response->assertStatus(201)
             ->assertJsonPath('data.application.status', 'DRAFT')
-            ->assertJsonPath('data.application.is_locked', false);
+            ->assertJsonPath('data.application.is_locked', false)
+            ->assertJsonPath('data.application.can_be_deleted', true);
     }
 
     public function test_index_only_lists_the_authenticated_users_own_applications(): void
@@ -44,6 +45,61 @@ class ApplicationCreationTest extends CreditApplicationTestCase
         $this->getJson('/api/applications/999999')
             ->assertStatus(404)
             ->assertJsonPath('error.code', 'NOT_FOUND');
+    }
+
+    public function test_customer_can_delete_an_own_unfinished_application(): void
+    {
+        $application = $this->newApplication();
+
+        $this->deleteJson("/api/applications/{$application->id}")
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data', null);
+
+        $this->assertSoftDeleted('credit_applications', ['id' => $application->id]);
+        $this->assertDatabaseHas('audit_logs', [
+            'credit_application_id' => $application->id,
+            'action' => 'credit_application.deleted_by_customer',
+        ]);
+    }
+
+    public function test_customer_can_delete_a_completed_draft_before_validation(): void
+    {
+        $application = $this->newApplication();
+        $this->completeStep2($application);
+        $this->putJson("/api/applications/{$application->id}/project", $this->validProjectPayload())->assertOk();
+
+        $this->deleteJson("/api/applications/{$application->id}")->assertOk();
+
+        $this->assertSoftDeleted('credit_applications', ['id' => $application->id]);
+    }
+
+    public function test_customer_cannot_delete_an_application_after_validation(): void
+    {
+        $application = $this->newApplication();
+        $application->forceFill(['status' => CreditApplication::STATUS_VALIDATION_1_COMPLETED])->save();
+
+        $this->deleteJson("/api/applications/{$application->id}")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'APPLICATION_CANNOT_BE_DELETED');
+
+        $this->getJson("/api/applications/{$application->id}")
+            ->assertOk()
+            ->assertJsonPath('data.application.can_be_deleted', false);
+
+        $this->assertNotSoftDeleted('credit_applications', ['id' => $application->id]);
+    }
+
+    public function test_customer_cannot_delete_another_users_application(): void
+    {
+        $otherUser = User::factory()->create();
+        $application = CreditApplication::factory()->create(['user_id' => $otherUser->id]);
+
+        $this->deleteJson("/api/applications/{$application->id}")
+            ->assertStatus(403)
+            ->assertJsonPath('error.code', 'FORBIDDEN');
+
+        $this->assertNotSoftDeleted('credit_applications', ['id' => $application->id]);
     }
 
     public function test_index_includes_the_n_demande_once_the_credit_step_is_saved(): void

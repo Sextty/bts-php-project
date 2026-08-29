@@ -21,4 +21,9 @@ class CreditApplicationPolicy
     {
         return $application->user_id === $user->id;
     }
+
+    public function delete(User $user, CreditApplication $application): bool
+    {
+        return $application->user_id === $user->id;
+    }
 }

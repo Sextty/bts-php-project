@@ -83,6 +83,7 @@ export default function ValidationStepPage() {
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[] | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [forceConfirmOpen, setForceConfirmOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<DocumentDto | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -97,13 +98,14 @@ export default function ValidationStepPage() {
       .finally(() => setLoading(false));
   }, [applicationId, router]);
 
-  async function handleValidationOne() {
+  async function handleValidationOne(forceAiValidation = false) {
     setError(null);
     setValidationErrors(null);
     setWorking(true);
     try {
-      const { application } = await runValidationOne(applicationId);
+      const { application } = await runValidationOne(applicationId, forceAiValidation);
       setApplication(application);
+      setForceConfirmOpen(false);
     } catch (err) {
       if (err instanceof ApiError && err.errors) {
         setValidationErrors(err.errors);
@@ -153,6 +155,9 @@ export default function ValidationStepPage() {
     application.client && application.credit_request && application.project;
 
   const readOnly = DECIDED_STATUSES.has(application.status) || application.status === 'SUBMITTED';
+  const canForceAiValidation = Boolean(
+    validationErrors?.length && validationErrors.every((validationError) => /^Document «[^»]+»\s*:/u.test(validationError))
+  );
 
   return (
     <div className="portal-shell">
@@ -402,9 +407,57 @@ export default function ValidationStepPage() {
                   <p className="text-xs font-medium text-red-900">
                     Après correction, relancez la vérification de conformité.
                   </p>
+
+                  {canForceAiValidation && (
+                    <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+                      <h3 className="text-xs font-bold">Continuer avec une vérification humaine</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-amber-900">
+                        Vous pouvez forcer cette étape. Le verdict de l&apos;IA sera conservé et votre dossier sera signalé aux agents BTS pour un contrôle manuel obligatoire.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setForceConfirmOpen(true)}
+                        disabled={working}
+                        className="mt-3 inline-flex items-center justify-center rounded-lg border border-amber-700 bg-white px-4 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Forcer la validation
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
+
+            <Dialog open={forceConfirmOpen} onOpenChange={setForceConfirmOpen}>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="font-display text-xl text-[#0C1825]">
+                    Forcer la validation malgré l&apos;alerte IA ?
+                  </DialogTitle>
+                  <DialogDescription className="pt-2 text-xs leading-relaxed text-[#3D5166]">
+                    Cette action ne valide pas l&apos;authenticité du document. Le résultat IA restera enregistré et le dossier devra être contrôlé manuellement par un agent BTS avant toute décision.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter className="gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setForceConfirmOpen(false)}
+                    disabled={working}
+                    className="btn-outline text-xs"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleValidationOne(true)}
+                    disabled={working}
+                    className="inline-flex items-center justify-center rounded-lg bg-amber-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {working ? 'Validation en cours…' : 'Oui, forcer la validation'}
+                  </button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {/* Validation Buttons & Final Lock */}
             {application.status === 'VALIDATION_1_COMPLETED' ? (
@@ -467,7 +520,7 @@ export default function ValidationStepPage() {
             ) : (
               <button
                 type="button"
-                onClick={handleValidationOne}
+                onClick={() => void handleValidationOne()}
                 disabled={working}
                 className="btn-red text-xs w-full shadow-xs"
                 style={{ padding: '12px 24px' }}

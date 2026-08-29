@@ -49,6 +49,36 @@ class CreditApplicationService
     }
 
     /**
+     * Removes an unfinished dossier from normal queries while retaining its records, documents,
+     * and audit history for traceability. Validated and terminal dossiers are never deletable by
+     * the customer.
+     */
+    public function deleteUnfinished(CreditApplication $application, User $actor, ?string $ip = null, ?string $userAgent = null): void
+    {
+        DB::transaction(function () use ($application, $actor, $ip, $userAgent) {
+            $lockedApplication = CreditApplication::query()
+                ->lockForUpdate()
+                ->findOrFail($application->getKey());
+
+            if (! $lockedApplication->canBeDeletedByCustomer()) {
+                throw new ApiException(ApiErrorCode::ApplicationCannotBeDeleted);
+            }
+
+            $this->auditLog->log(
+                'credit_application.deleted_by_customer',
+                $actor,
+                previousState: ['status' => $lockedApplication->status],
+                newState: ['deleted' => true],
+                ipAddress: $ip,
+                userAgent: $userAgent,
+                application: $lockedApplication,
+            );
+
+            $lockedApplication->delete();
+        }, 5);
+    }
+
+    /**
      * Throws 403 if the application can no longer be edited by the customer. Called at the top
      * of every mutating action (client/credit/project PUT, document upload/delete) — the
      * frontend hiding edit controls after lock is a UX nicety, not the enforcement.

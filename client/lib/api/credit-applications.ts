@@ -123,6 +123,7 @@ export interface CreditApplicationDto {
   id: number;
   status: ApplicationStatus;
   is_locked: boolean;
+  can_be_deleted: boolean;
   submitted_at: string | null;
   rejection_reason: string | null;
   created_at: string;
@@ -148,6 +149,10 @@ export function createApplication() {
 
 export function getApplication(id: number) {
   return apiFetch<{ application: CreditApplicationDto }>(`/applications/${id}`, { auth: true });
+}
+
+export function deleteApplication(id: number) {
+  return apiFetch<null>(`/applications/${id}`, { method: 'DELETE', auth: true });
 }
 
 export function updateClient(id: number, input: Omit<ClientDto, 'code_client'>) {
@@ -186,9 +191,10 @@ export function deleteDocument(id: number, documentId: number) {
   return apiFetch<null>(`/applications/${id}/documents/${documentId}`, { method: 'DELETE', auth: true });
 }
 
-export function runValidationOne(id: number) {
+export function runValidationOne(id: number, forceAiValidation = false) {
   return apiFetch<{ application: CreditApplicationDto }>(`/applications/${id}/validation-1`, {
     method: 'POST',
+    body: { force_ai_validation: forceAiValidation },
     auth: true,
   });
 }

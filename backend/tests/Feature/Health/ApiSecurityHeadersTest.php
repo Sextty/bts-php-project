@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Health;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ApiSecurityHeadersTest extends TestCase
@@ -31,12 +32,43 @@ class ApiSecurityHeadersTest extends TestCase
             ->assertHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
 
-    public function test_security_center_origin_is_allowed_by_cors(): void
+    #[DataProvider('localPortalOrigins')]
+    public function test_each_local_portal_origin_is_allowed_by_cors(string $origin): void
     {
         $this->withHeaders([
-            'Origin' => 'http://localhost:3003',
+            'Origin' => $origin,
             'Access-Control-Request-Method' => 'GET',
         ])->options('/api/health')
-            ->assertHeader('Access-Control-Allow-Origin', 'http://localhost:3003');
+            ->assertHeader('Access-Control-Allow-Origin', $origin);
+    }
+
+    public function test_unconfigured_origin_is_not_allowed_by_cors(): void
+    {
+        $this->withHeaders([
+            'Origin' => 'http://example.test:3000',
+            'Access-Control-Request-Method' => 'GET',
+        ])->options('/api/health')
+            ->assertHeaderMissing('Access-Control-Allow-Origin');
+    }
+
+    public function test_reverb_uses_explicit_local_hosts_without_a_wildcard(): void
+    {
+        $allowedOrigins = config('reverb.apps.apps.0.allowed_origins');
+
+        $this->assertContains('localhost', $allowedOrigins);
+        $this->assertContains('127.0.0.1', $allowedOrigins);
+        $this->assertNotContains('*', $allowedOrigins);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function localPortalOrigins(): iterable
+    {
+        foreach (['localhost', '127.0.0.1'] as $host) {
+            foreach ([3000, 3001, 3002, 3003] as $port) {
+                $origin = "http://{$host}:{$port}";
+
+                yield $origin => [$origin];
+            }
+        }
     }
 }

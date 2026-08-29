@@ -76,6 +76,8 @@ Route::middleware(['auth:sanctum', 'customer'])->prefix('applications')->group(f
         ->middleware(['permission:application.create', 'throttle:bts:10']);
     Route::get('{application}', [CreditApplicationController::class, 'show'])
         ->middleware('permission:application.view');
+    Route::delete('{application}', [CreditApplicationController::class, 'destroy'])
+        ->middleware(['permission:application.update', 'throttle:bts:10']);
 
     Route::put('{application}/client', [ClientController::class, 'update'])
         ->middleware(['permission:application.update', 'throttle:bts:30']);

@@ -1,5 +1,21 @@
 <?php
 
+$configuredReverbOrigins = array_filter(array_map('trim', explode(',', env(
+    'REVERB_ALLOWED_ORIGINS',
+    env(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003'
+    )
+))));
+
+// Reverb compares the request Origin's parsed hostname, not its full URL. Accept either exact
+// hostnames or full origins in configuration, normalize both to the framework's host format,
+// and keep the list explicit (never '*').
+$allowedReverbHosts = array_values(array_unique(array_filter(array_map(
+    static fn (string $origin): string => parse_url($origin, PHP_URL_HOST) ?: $origin,
+    $configuredReverbOrigins,
+))));
+
 return [
 
     /*
@@ -82,7 +98,7 @@ return [
                     'scheme' => env('REVERB_SCHEME', 'https'),
                     'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
                 ],
-                'allowed_origins' => ['*'],
+                'allowed_origins' => $allowedReverbHosts,
                 'ping_interval' => env('REVERB_APP_PING_INTERVAL', 60),
                 'activity_timeout' => env('REVERB_APP_ACTIVITY_TIMEOUT', 30),
                 'max_connections' => env('REVERB_APP_MAX_CONNECTIONS'),
