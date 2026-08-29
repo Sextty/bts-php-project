@@ -1,14 +1,57 @@
-# BTS Bank — Loan Origination MVP
+<div align="center">
+  <img src="sc/public/logo.png" width="150" alt="BTS Bank logo">
 
-BTS Bank is a multi-portal loan-origination prototype built with Laravel and Next.js. It covers
-customer onboarding, credit applications, document verification, staff and admin decisions,
-appointments, realtime discussion, audit monitoring, and security analytics.
+  # Digital Credit Application Platform
 
+  **A secure, role-based loan-origination experience connecting customers, branch teams, bank
+  administrators, and security operators through one consistent workflow.**
+
+  [![Laravel](https://img.shields.io/badge/Laravel_12-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com/)
+  [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+  [![MariaDB](https://img.shields.io/badge/MariaDB-003545?style=for-the-badge&logo=mariadb&logoColor=white)](https://mariadb.org/)
+
+  `4 portals` · `1 Laravel API` · `Bearer authentication` · `Realtime events` · `Human-controlled AI`
+</div>
+
+---
+
+## About the project
+
+BTS Bank is a full-stack loan-origination MVP designed to digitize the journey from a customer's
+first credit request to the bank's final decision. Instead of placing every role in one large
+interface, it provides four focused portals backed by a shared Laravel API and a controlled
+application state machine.
+
+The platform demonstrates customer onboarding and OTP login, structured dossier creation, secure
+document handling, advisory AI analysis, dual staff/admin approval, appointments, realtime chat,
+audit trails, operational analytics, and security monitoring. Important decisions remain governed
+by backend authorization and human review—the AI assists document analysis but never grants credit.
+
+> [!IMPORTANT]
 > This repository is a demonstration/MVP, not a certified core-banking system. Use synthetic data
 > only. Production use requires banking governance, legal/compliance approval, independent
 > security assessment, managed infrastructure, and approved integrations.
 
+## The experience
+
+```mermaid
+flowchart LR
+    A[Customer onboarding] --> B[Credit dossier]
+    B --> C[Documents and AI assistance]
+    C --> D[Staff branch review]
+    D --> E[Admin final decision]
+    E --> F[Appointment and follow-up]
+    B -. audit events .-> G[Security Center]
+    C -. human review .-> D
+    D <-. realtime discussion .-> A
+```
+
 ## Applications
+
+Each role receives a dedicated interface while sharing the same workflow, data rules, and audit
+trail.
 
 | Application | Directory | Local URL | Purpose |
 | --- | --- | --- | --- |
@@ -26,15 +69,56 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 
 ## Main capabilities
 
-- Customer registration and OTP-based authentication.
-- Multi-step credit application workflow with server-side state enforcement.
-- Secure document upload and advisory AI-assisted verification.
-- Optional OpenRouter free-model routing with strict JSON validation and human-review fallback.
-- Customer deletion of unfinished dossiers; validated dossiers are retained and auditable.
-- Staff first-level review and administrator final approval or rejection.
-- Appointment scheduling, controlled rescheduling and realtime customer/staff discussion.
-- Role and branch isolation, audit logs, session monitoring and Security Center dashboards.
-- Exact local CORS/CSP/Reverb origins without unrestricted wildcards.
+| Area | What the platform demonstrates |
+| --- | --- |
+| Identity | Customer registration, OTP verification, login, internal staff accounts and isolated sessions |
+| Dossier workflow | Multi-step application, server-side state transitions, final locking and status history |
+| Documents | Validated uploads, controlled downloads, advisory AI extraction and mandatory human fallback |
+| Bank decisions | Branch-scoped staff review followed by administrator approval or rejection |
+| Customer service | Automatic appointment proposal, controlled rescheduling and realtime dossier discussion |
+| Security | Explicit CORS/CSP/Reverb origins, authorization policies, throttling, audit logs and session monitoring |
+| Operations | Dashboards, workflow analytics, activity views and isolated end-to-end testing |
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Portals[Next.js portals]
+        Client[Client :3000]
+        Staff[Staff :3001]
+        Admin[Admin :3002]
+        SC[Security Center :3003]
+    end
+
+    Client --> API
+    Staff --> API
+    Admin --> API
+    SC --> API
+
+    API[Laravel REST API :8000] --> DB[(MariaDB / MySQL)]
+    API --> Storage[(Private document storage)]
+    API --> Queue[Queue and notifications]
+    API --> AI[Local / OpenRouter / Gemini adapter]
+    API <--> Reverb[Laravel Reverb :6001]
+    Reverb <--> Client
+    Reverb <--> Staff
+```
+
+<p align="center">
+  <a href="diagramme/img/01_system_architecture.png">
+    <img src="diagramme/img/01_system_architecture.png" width="900" alt="Detailed BTS Bank system architecture">
+  </a>
+</p>
+
+## Technology stack
+
+| Layer | Technologies |
+| --- | --- |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS, Laravel Echo |
+| Backend | PHP 8.2+, Laravel 12, Sanctum Bearer tokens, policies, queues and Reverb |
+| Data | MariaDB/MySQL, Eloquent ORM, private filesystem document storage |
+| AI | Provider abstraction with local-only, OpenRouter and Gemini adapters; strict backend parsing |
+| Quality | PHPUnit feature/unit tests, ESLint, TypeScript checks, production builds and Playwright E2E |
 
 ## Requirements
 
