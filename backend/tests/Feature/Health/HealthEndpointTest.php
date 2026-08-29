@@ -21,7 +21,13 @@ class HealthEndpointTest extends TestCase
     {
         parent::setUp();
         Storage::fake('documents');
-        config(['operations.worker.required' => false]);
+        config([
+            'operations.worker.required' => false,
+            // Storage::fake owns the write/read probe. Use an existing cross-platform path for
+            // the separate capacity probe because Laravel's ephemeral fake root may not yet
+            // exist on a fresh Linux runner.
+            'filesystems.disks.documents.root' => base_path(),
+        ]);
     }
 
     public function test_health_reports_every_component_ok(): void

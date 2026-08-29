@@ -192,11 +192,16 @@ jobs:
         shell: bash
         run: |
           app_key="base64:$(openssl rand -base64 32 | tr -d '\n')"
+          otp_token="$(openssl rand -hex 32)"
+          reverb_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$app_key"
+          echo "::add-mask::$otp_token"
+          echo "::add-mask::$reverb_secret"
           {
             echo "APP_KEY=$app_key"
             echo "AUDIT_HMAC_KEY=$app_key"
-            echo "BTS_LOAD_TEST_OTP_COLLECTOR_TOKEN=$(openssl rand -hex 32)"
-            echo "REVERB_APP_SECRET=$(openssl rand -hex 32)"
+            echo "BTS_LOAD_TEST_OTP_COLLECTOR_TOKEN=$otp_token"
+            echo "REVERB_APP_SECRET=$reverb_secret"
           } >> "$GITHUB_ENV"
       - name: Install backend dependencies
         working-directory: backend
@@ -208,7 +213,7 @@ jobs:
           base=https://github.com/grafana/k6/releases/download/v1.5.0
           curl -fsSL "$base/k6-v1.5.0-linux-amd64.tar.gz" -o /tmp/k6.tar.gz
           curl -fsSL "$base/k6-v1.5.0-checksums.txt" -o /tmp/k6-checksums.txt
-          grep ' k6-v1.5.0-linux-amd64.tar.gz$' /tmp/k6-checksums.txt | sed 's#  k6-#  /tmp/k6-#' | sha256sum --check
+          grep ' k6-v1.5.0-linux-amd64.tar.gz$' /tmp/k6-checksums.txt | awk '{print $1 "  /tmp/k6.tar.gz"}' | sha256sum --check
           tar -xzf /tmp/k6.tar.gz -C /tmp
           sudo install /tmp/k6-v1.5.0-linux-amd64/k6 /usr/local/bin/k6
       - name: Run real API workflow and correctness smoke

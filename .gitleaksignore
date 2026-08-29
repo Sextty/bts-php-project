@@ -5,3 +5,5 @@ backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:
 backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:143
 backend/tests/Feature/Notifications/NotificationServiceTest.php:generic-api-key:144
 backend/tests/Feature/Banking/LedgerCoreTest.php:generic-api-key:133
+# Synthetic notification dedupe key in an outbox rollback test; not a credential.
+b93bf17e4e45f8ebb81e8fbfc541a5d51633514a:backend/tests/Feature/Async/TransactionalOutboxTest.php:generic-api-key:41
