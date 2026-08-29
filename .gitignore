@@ -47,6 +47,7 @@ node_modules/
 test-results/
 playwright-report/
 blob-report/
+.dev-stack/
 test_key*.php
 backend/test_key*.php
 

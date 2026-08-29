@@ -48,6 +48,23 @@ php artisan migrate
 php artisan db:seed
 ```
 
+For a safe local demonstration on Windows, the repository launcher validates dependencies,
+the four frontend API URLs, and the local mail transport before starting every service:
+
+```powershell
+cd C:\Users\wassi\Desktop\bts-php-project
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-stack.ps1 start
+```
+
+It refuses to start a queue worker with a real external mail transport unless that choice is
+explicit. Prefer `MAIL_MAILER=log` for synthetic local demonstrations. Use `status` to inspect the
+stack and `stop` to stop only processes recorded by the launcher:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-stack.ps1 status
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-stack.ps1 stop
+```
+
 Open separate terminals and run:
 
 ```powershell
