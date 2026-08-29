@@ -49,6 +49,10 @@ __pycache__/
 *.py[cod]
 *.log
 node_modules/
+.next*/
+
+# Local database backup artifacts may contain sensitive development data
+backups/
 test-results/
 playwright-report/
 blob-report/
