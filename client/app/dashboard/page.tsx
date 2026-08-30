@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getToken, clearToken } from '@/lib/auth/token';
 import { getCurrentUser, type UserDto } from '@/lib/api/auth';
+import { ApiError } from '@/lib/api/client';
 import { listApplications, type CreditApplicationDto } from '@/lib/api/credit-applications';
 import { getNotifications, markNotificationsRead, type NotificationDto } from '@/lib/api/notifications';
 import { DashboardSkeleton } from '@/components/dashboard/skeleton';
@@ -51,8 +52,14 @@ export default function DashboardPage() {
     ]);
 
     if (userResult.status === 'rejected') {
-      clearToken();
-      router.replace('/login');
+      // A route change can abort an in-flight background refresh. Keep the valid tab session in
+      // that case (and for temporary network failures); only an explicit authentication response
+      // is allowed to end it. apiFetch also performs the same 401 cleanup as a final safeguard.
+      if (userResult.reason instanceof ApiError && userResult.reason.status === 401) {
+        clearToken();
+        router.replace('/login');
+      }
+      setLoading(false);
       return;
     }
 
