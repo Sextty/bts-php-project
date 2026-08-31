@@ -118,16 +118,19 @@ Copy-Item .env.example .env.local
 
 ## Start locally
 
-On Windows, the safe launcher checks dependencies, frontend API URLs, occupied ports, and the
-local mail transport before starting the complete stack:
+On Windows, start the MySQL/MariaDB service configured by `DB_HOST` and `DB_PORT` in
+`backend/.env`, then run the safe launcher. It checks the database connection, dependencies,
+frontend API URLs, occupied ports, and the local mail transport before starting the complete
+stack:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-stack.ps1 start
 ```
 
 Use `scripts/dev-stack.ps1 status` to inspect it and `scripts/dev-stack.ps1 stop` to stop only the
-processes created by the launcher. For a synthetic demo, use `MAIL_MAILER=log`; an external mail
-transport requires explicit `-AllowExternalMail` authorization.
+processes created by the launcher. Startup succeeds only after the API and portal health checks
+return HTTP 2xx and the queue worker remains active. For a synthetic demo, use `MAIL_MAILER=log`;
+an external mail transport requires explicit `-AllowExternalMail` authorization.
 
 Open a separate terminal for each command:
 

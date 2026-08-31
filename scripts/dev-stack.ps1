@@ -109,13 +109,30 @@ function Test-HttpProbe {
 
     try {
         $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3
-        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 600
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 300
     } catch {
-        if ($_.Exception.Response) {
-            $statusCode = [int] $_.Exception.Response.StatusCode
-            return $statusCode -ge 200 -and $statusCode -lt 600
-        }
         return $false
+    }
+}
+
+function Test-TcpEndpoint {
+    param(
+        [Parameter(Mandatory)] [string] $Address,
+        [Parameter(Mandatory)] [int] $Port,
+        [int] $TimeoutMilliseconds = 1000
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $connection = $client.ConnectAsync($Address, $Port)
+        if (-not $connection.Wait($TimeoutMilliseconds)) {
+            return $false
+        }
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        $client.Dispose()
     }
 }
 
@@ -147,6 +164,22 @@ function Test-RecordedProcess {
     } catch {
         return $false
     }
+}
+
+function Test-ServiceReady {
+    param(
+        [Parameter(Mandatory)] $Service,
+        $Record
+    )
+
+    if ($Service.Port) {
+        if (-not (Get-PortOwner -Port $Service.Port)) {
+            return $false
+        }
+        return -not $Service.Probe -or (Test-HttpProbe -Uri $Service.Probe)
+    }
+
+    return $Record -and (Test-RecordedProcess -Record $Record)
 }
 
 function Get-DescendantProcessIds {
@@ -207,6 +240,22 @@ function Assert-StartPrerequisites {
     }
     if (-not (Test-Path -LiteralPath $backendEnvironment)) {
         $errors.Add('backend/.env is missing. Copy backend/.env.example and configure local values.')
+    } else {
+        $databaseConnection = Get-EnvironmentValue -Path $backendEnvironment -Name 'DB_CONNECTION'
+        if ($databaseConnection -in @('mysql', 'mariadb')) {
+            $databaseHost = Get-EnvironmentValue -Path $backendEnvironment -Name 'DB_HOST'
+            $databasePortValue = Get-EnvironmentValue -Path $backendEnvironment -Name 'DB_PORT'
+            $databasePort = 0
+
+            if (-not $databaseHost) {
+                $databaseHost = '127.0.0.1'
+            }
+            if (-not [int]::TryParse($databasePortValue, [ref] $databasePort) -or $databasePort -lt 1 -or $databasePort -gt 65535) {
+                $errors.Add("backend/.env contains an invalid DB_PORT value: $databasePortValue")
+            } elseif (-not (Test-TcpEndpoint -Address $databaseHost -Port $databasePort)) {
+                $errors.Add("Database is not reachable at ${databaseHost}:$databasePort. Start the configured local MariaDB/MySQL service before launching the stack.")
+            }
+        }
     }
 
     foreach ($portal in @('client', 'staff', 'admin', 'sc')) {
@@ -291,10 +340,15 @@ function Start-Stack {
 
     @($activeRecords) | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding utf8
 
+    $startupServices = @($services | Where-Object {
+        -not ($_.Name -eq 'queue' -and $SkipQueueWorker)
+    })
     $deadline = (Get-Date).AddSeconds(60)
     do {
-        $pending = @($services | Where-Object {
-            $_.Port -and -not (Get-PortOwner -Port $_.Port)
+        $pending = @($startupServices | Where-Object {
+            $service = $PSItem
+            $record = $activeRecords | Where-Object { $_.name -eq $service.Name } | Select-Object -First 1
+            -not (Test-ServiceReady -Service $service -Record $record)
         })
         if ($pending.Count -eq 0) {
             break
@@ -302,7 +356,11 @@ function Start-Stack {
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
 
-    $failed = @($services | Where-Object { $_.Port -and -not (Get-PortOwner -Port $_.Port) })
+    $failed = @($startupServices | Where-Object {
+        $service = $PSItem
+        $record = $activeRecords | Where-Object { $_.name -eq $service.Name } | Select-Object -First 1
+        -not (Test-ServiceReady -Service $service -Record $record)
+    })
     if ($failed.Count -gt 0) {
         Show-Status
         throw "Some services did not become ready: $($failed.Name -join ', '). Check $logDirectory."
